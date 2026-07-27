@@ -96,7 +96,7 @@ function containsJapanese(value: string | undefined) {
 
 function localizePoint(point: Point, fallback = "저장한 현지 장소"): Point {
   if (point.category !== "검색") return point;
-  const name = koreanPlaceText(point.name, fallback);
+  const name = koreanPlaceText(point.name, point.name || fallback);
   const address = koreanPlaceText(point.sub, "일본 아이치현 이누야마시");
   return { ...point, name, sub:address, description:address };
 }
@@ -114,7 +114,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
   const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
   const localizedName = koreanPlaceText(rawName, "");
-  const koreanName = localizedName || (containsJapanese(rawName) ? placeType : rawName) || fallbackName;
+  const koreanName = localizedName || rawName || fallbackName;
   return {
     name:koreanName,
     originalName:rawName && rawName !== koreanName ? rawName : undefined,
@@ -286,6 +286,9 @@ export default function Home() {
   const [tripSaved, setTripSaved] = useState(false);
   const [aiOverview, setAiOverview] = useState("");
   const [aiGuidePlan, setAiGuidePlan] = useState<AiGuidePlan | null>(null);
+  const [aiGuideArea, setAiGuideArea] = useState("");
+  const aiGuidePlanRef = useRef<AiGuidePlan | null>(null);
+  const aiGuideAreaRef = useRef("");
   const [aiGuideLoading, setAiGuideLoading] = useState(false);
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
@@ -293,7 +296,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide-v3:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v4:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -458,6 +461,11 @@ export default function Home() {
           setSelected(point);
           setSheet("places");
           setSheetCollapsed(false);
+          void localizePointNames([point]).then(([localized])=>{
+            if (!localized) return;
+            setPlaceResults((current)=>current.map((item)=>item.id===localized.id?localized:item));
+            setSelected((current)=>current.id===localized.id?localized:current);
+          });
         } catch {
           setRouteError("선택한 장소 정보를 불러오지 못했어요.");
         }
@@ -525,6 +533,40 @@ export default function Home() {
     persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
   };
 
+  const localizePointNames = async (points:Point[]) => {
+    const cached = new Map<string,string>();
+    points.forEach((point)=>{
+      const value = localStorage.getItem(`place-name-ko:${point.id}`);
+      if (value) cached.set(point.id,value);
+    });
+    const missing = points.filter((point)=>!cached.has(point.id) && containsJapanese(point.originalName || point.name));
+    if (missing.length) {
+      try {
+        const response = await fetch("/api/ai-localize",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({places:missing.map((point)=>({id:point.id,name:point.originalName || point.name}))})
+        });
+        const data = await response.json();
+        if (response.ok && Array.isArray(data.places)) {
+          data.places.forEach((item:any)=>{
+            const name=String(item.koreanName||"").trim();
+            if (name && !containsJapanese(name) && !/일본\s*(음식점|식당|카페|관광|장소)|현지\s*(음식점|식당|카페|장소)/.test(name)) {
+              cached.set(item.id,name);
+              localStorage.setItem(`place-name-ko:${item.id}`,name);
+            }
+          });
+        }
+      } catch {}
+    }
+    return points.map((point)=>{
+      const name=cached.get(point.id);
+      if (!name) return point;
+      const originalName=point.originalName || point.name;
+      return {...point,name,originalName:originalName!==name?originalName:point.originalName};
+    });
+  };
+
   const searchGooglePlaces = async (queryOverride?:string) => {
     const query = (queryOverride || placeQuery).trim();
     if (!query) return;
@@ -570,6 +612,10 @@ export default function Home() {
       }});
       setPlaceResults(next);
       if (next[0]) setSelected(next[0]);
+      void localizePointNames(next).then((localized)=>{
+        setPlaceResults(localized);
+        setSelected((current)=>localized.find((point)=>point.id===current.id) || current);
+      });
       if (!next.length) setRouteError(`${travelArea} 지역 안에서 '${query}' 검색 결과를 찾지 못했어요.`);
     } catch {
       setRouteError("장소 검색을 사용할 수 없어요. Demo Key의 Places 할당량을 확인해 주세요.");
@@ -594,6 +640,10 @@ export default function Home() {
       localStorage.setItem("travel-search-area", travelArea.trim());
       setPlaceResults([]);
       setGuideRecommendations([]);
+      setAiGuidePlan(null);
+      setAiGuideArea("");
+      aiGuidePlanRef.current=null;
+      aiGuideAreaRef.current="";
       setCategory("전체");
       await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport);
     } catch {
@@ -643,6 +693,9 @@ export default function Home() {
           setAiOverview(cached.overview || "");
           setGuideRecommendations(cached.recommendations);
           setAiGuidePlan(cached.guide || null);
+          setAiGuideArea(cached.area || travelArea.trim());
+          aiGuidePlanRef.current=cached.guide || null;
+          aiGuideAreaRef.current=cached.area || travelArea.trim();
           setSelected(cached.recommendations[0]);
           setDestinationId(cached.recommendations[0].id);
           return cached.recommendations as Point[];
@@ -692,8 +745,10 @@ export default function Home() {
           };
         });
       }));
-      const candidates = batches.flatMap((batch) => batch.status === "fulfilled" ? batch.value : [])
-        .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
+      const categoryCandidates = batches.map((batch)=>batch.status==="fulfilled" ? batch.value : []);
+      const candidates = [0,1].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean))
+        .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index)
+        .slice(0,20);
       if (!candidates.length) throw new Error();
       fallbackPoints = candidates.map((point)=>({
         ...point,
@@ -723,11 +778,18 @@ export default function Home() {
       });
       const aiData = await aiResponse.json();
       if (!aiResponse.ok || !Array.isArray(aiData.result?.recommendations)) throw new Error(aiData.error || "AI 추천 실패");
+      const localizationMap = new Map(
+        (Array.isArray(aiData.result.localizations)?aiData.result.localizations:[])
+          .map((item:any)=>[item.id,String(item.koreanName||"").trim()])
+      );
       const recommendationMap = new Map(aiData.result.recommendations.map((item:any)=>[item.id,item]));
       const aiSelected = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
         const ai:any = recommendationMap.get(point.id);
+        const localizedName=localizationMap.get(point.id);
         return {
           ...point,
+          name:localizedName && !containsJapanese(localizedName) ? localizedName : point.name,
+          originalName:point.originalName || (localizedName!==point.name ? point.name : undefined),
           color:pointColor(point),
           aiReason:ai.reason,
           aiPrice:ai.priceGuide || priceGuideFor(point.placeType || guideGroup(point)),
@@ -742,16 +804,25 @@ export default function Home() {
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
       const aiIds = new Set(aiSelected.map((point)=>point.id));
-      const next = [...aiSelected,...fallbackPoints.filter((point)=>!aiIds.has(point.id))].slice(0,20);
+      const localizedFallback = fallbackPoints.filter((point)=>!aiIds.has(point.id)).map((point)=>{
+        const localizedName=localizationMap.get(point.id);
+        return localizedName && !containsJapanese(localizedName)
+          ? {...point,name:localizedName,originalName:point.originalName || point.name}
+          : point;
+      });
+      const next = [...aiSelected,...localizedFallback].slice(0,20);
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
       const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
       setAiGuidePlan(preparedGuide);
+      setAiGuideArea(travelArea.trim());
+      aiGuidePlanRef.current=preparedGuide;
+      aiGuideAreaRef.current=travelArea.trim();
       try {
         localStorage.setItem(aiCacheKey(),JSON.stringify({
           createdAt:Date.now(),overview:aiData.result.overview || "",
-          recommendations:next,guide:preparedGuide
+          area:travelArea.trim(),recommendations:next,guide:preparedGuide
         }));
       } catch {}
       setSelected(next[0]);
@@ -988,12 +1059,14 @@ export default function Home() {
   };
 
   const selectRecommendationCategory = (item:Category) => {
-    const candidates = item === "전체" ? combinedPlacePool : combinedPlacePool.filter((point)=>guideGroup(point)===item);
+    const recommendationCandidates = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
+    const candidates = item === "전체" ? recommendationCandidates : recommendationCandidates.filter((point)=>guideGroup(point)===item);
     if (!candidates.length) {
       setRouteError(`${travelArea} 추천 장소 중 '${item}' 카테고리 결과가 없어요.`);
       return;
     }
     setRouteError("");
+    setPlaceResults([]);
     setCategory(item);
     const next = candidates[0];
     setSelected(next);
@@ -1031,6 +1104,9 @@ export default function Home() {
     const profile:TripProfile = {travelers,startDate:guideStart,endDate:guideEnd};
     localStorage.setItem("family-trip-profile",JSON.stringify(profile));
     setAiGuidePlan(null);
+    setAiGuideArea("");
+    aiGuidePlanRef.current=null;
+    aiGuideAreaRef.current="";
     setTripSaved(true);
     setRouteError("");
     setSheet("places");
@@ -1038,17 +1114,20 @@ export default function Home() {
     setTimeout(()=>void buildAreaGuide(),0);
   };
 
-  const openAiGuidebook = async () => {
+  const openAiGuidebook = async (force=false) => {
     setGuideOpen(true);
-    if (aiGuidePlan?.days?.length) {
+    const requestedArea=travelArea.trim();
+    if (!force && aiGuidePlan?.days?.length && aiGuideArea===requestedArea) {
       setAiGuideLoading(false);
       return;
     }
     setAiGuideLoading(true);
     setRouteError("");
     try {
-      const places = guideRecommendations.length ? guideRecommendations : await buildAreaGuide();
+      const areaChanged=aiGuideArea!==requestedArea;
+      const places = areaChanged || !guideRecommendations.length ? await buildAreaGuide() : guideRecommendations;
       if (!places?.length) throw new Error("먼저 여행 정보 저장 후 AI 추천 장소를 불러와 주세요.");
+      if (areaChanged && aiGuidePlanRef.current?.days?.length && aiGuideAreaRef.current===requestedArea) return;
       const response = await fetch("/api/ai-guide",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1069,6 +1148,9 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok || !data.guide?.days) throw new Error(data.error || "AI 가이드북을 만들지 못했어요.");
       setAiGuidePlan(data.guide);
+      setAiGuideArea(requestedArea);
+      aiGuidePlanRef.current=data.guide;
+      aiGuideAreaRef.current=requestedArea;
     } catch (error:any) {
       setRouteError(error?.message || "AI 가이드북을 만들지 못했어요.");
     } finally {
@@ -1104,7 +1186,7 @@ export default function Home() {
         <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
         <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
         <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
-        <button className={guideOpen ? "active" : ""} onClick={openAiGuidebook}><BookOpen size={19}/><span>AI 가이드북</span></button>
+        <button className={guideOpen ? "active" : ""} onClick={()=>void openAiGuidebook()}><BookOpen size={19}/><span>AI 가이드북</span></button>
       </nav>
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
@@ -1207,7 +1289,7 @@ export default function Home() {
               ))}
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
-            <button className="guide-create-button" onClick={openAiGuidebook}><Sparkles size={17}/> AI 가이드북 만들기</button>
+            <button className="guide-create-button" onClick={()=>void openAiGuidebook()}><Sparkles size={17}/> AI 가이드북 만들기</button>
           </>
         )}
 
@@ -1323,7 +1405,7 @@ export default function Home() {
             <div className="guide-recommend-panel">
               <div><small>등록한 구성원·일정·추천 장소를 모두 반영해요</small><b>AI 가족여행 가이드북</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
-              <button onClick={openAiGuidebook} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "AI 구성 중…" : <><Sparkles size={16}/>AI 가이드 다시 만들기</>}</button>
+              <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "AI 구성 중…" : <><Sparkles size={16}/>AI 가이드 다시 만들기</>}</button>
               {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>

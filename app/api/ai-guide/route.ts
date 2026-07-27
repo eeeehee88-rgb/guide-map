@@ -10,9 +10,11 @@ export async function POST(request:Request) {
 
   const response = await fetch("https://api.deepseek.com/chat/completions",{
     method:"POST",
+    signal:AbortSignal.timeout(25000),
     headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
     body:JSON.stringify({
       model:"deepseek-v4-flash",
+      thinking:{type:"disabled"},
       response_format:{type:"json_object"},
       temperature:0.2,
       max_tokens:2400,
