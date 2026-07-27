@@ -293,3 +293,12 @@ button:disabled{cursor:not-allowed;opacity:.58}
   .guide-group>h3 span{font-size:13px}
   .guide-group>h3 small,.guide-group article>i,.guide-group article>footer{font-size:9px}
 }
+
+/* Full-screen place detail */
+.place-detail-overlay{align-items:stretch;background:#fff;backdrop-filter:none}
+.place-detail-popup{height:100dvh;max-height:none;border-radius:0;box-shadow:none}
+.place-detail-popup-head{min-height:70px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+.place-detail-popup-head:before{display:none}
+.place-detail-popup-head>div{padding-top:0}
+.place-detail-popup-head button{align-self:center}
+.place-detail-popup-scroll{padding-top:16px}
