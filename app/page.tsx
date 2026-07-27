@@ -155,6 +155,7 @@ export default function Home() {
   const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
   const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
   const regionalSavedPlaces = areaPoint ? savedPlaces.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : savedPlaces;
+  const regionalPlaceResults = areaPoint ? placeResults.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : placeResults;
   const hasSubwayArea = /나고야|도쿄|오사카|교토|삿포로|후쿠오카|센다이|고베|요코하마|히로시마/i.test(travelArea);
 
   useEffect(() => {
@@ -253,7 +254,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...regionalSavedPlaces]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const marker = new google.maps.Marker({
@@ -380,6 +381,8 @@ export default function Home() {
     if (!travelArea.trim()) return;
     setGuideLoading(true);
     setGuideRecommendations([]);
+    setPlaceResults([]);
+    setCategory("전체");
     setRouteError("");
     try {
       const google = (window as any).google;
@@ -400,6 +403,7 @@ export default function Home() {
         description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"", query:`${travelArea.trim()} 일본`
       };
       setAreaPoint(nextAreaPoint);
+      setSelected(nextAreaPoint);
       setOriginId("area-center");
       localStorage.setItem("travel-search-area", travelArea.trim());
       const { Place } = await google.maps.importLibrary("places");
@@ -442,6 +446,7 @@ export default function Home() {
         .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
       if (!next.length) throw new Error();
       setGuideRecommendations(next);
+      setSelected(next[0]);
       setDestinationId(next[0].id);
       routeLayerRef.current?.setMap(null);
       routeLayerRef.current = null;
@@ -566,6 +571,15 @@ export default function Home() {
     setRouteError("");
   };
 
+  const selectRecommendationCategory = (item:Category) => {
+    setCategory(item);
+    const candidates = item === "전체" ? recommendationPool : recommendationPool.filter((point)=>guideGroup(point)===item);
+    const next = candidates[0] || areaPoint;
+    if (!next) return;
+    setSelected(next);
+    mapRef.current?.panTo({lat:next.lat,lng:next.lng});
+  };
+
   return (
     <main className="mobile-app">
       <header className="mobile-header">
@@ -595,7 +609,7 @@ export default function Home() {
           <>
             <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2></div></div>
             <div className="category-scroll">
-              {categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}
+              {categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
             </div>
             <div className="selected-place">
               <span className="place-dot" style={{background:selected.color}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
