@@ -53,3 +53,122 @@
 .guide-group>h3{background:var(--group-color)}
 .place-price{padding:7px 9px;border-radius:8px;background:#fff7e8;color:#8a5a12!important;font-size:9px!important;font-weight:800}.ai-evidence{margin:8px 0 0!important;padding-top:7px;border-top:1px dashed #d8d1e5;color:#777f7b!important;font-size:8px!important}
 .selected-place-photo{width:100%;height:148px;display:block;margin-bottom:8px;border-radius:14px;object-fit:cover}.ai-item-list{margin-top:9px;padding:9px;border:1px solid #e2dced;border-radius:10px;background:#fff}.ai-item-list>b{display:block;margin-bottom:3px;color:#604b96;font-size:9px}.ai-item-list p{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0;padding:6px 0;border-bottom:1px dashed #e5e1eb;font-size:9px}.ai-item-list p:last-child{border-bottom:0}.ai-item-list span{color:#3f4b45;font-weight:700}.ai-item-list strong{flex:0 0 auto;color:#9b6410;font-size:8px}.place-move-note{margin:8px 0 0!important;padding:7px 8px;border-radius:8px;background:#edf4f1;color:#467064!important;font-size:8px!important;line-height:1.45}.spot-strip button{position:relative;min-height:118px}.spot-strip i{position:absolute;top:10px;right:9px;padding:3px 5px;border-radius:99px;background:color-mix(in srgb,var(--place-color) 15%,#fff);color:var(--place-color);font-size:7px;font-style:normal;font-weight:900}.spot-strip strong{display:block;margin-top:5px;overflow:hidden;color:#996317;font-size:8px;white-space:nowrap;text-overflow:ellipsis}
+
+/* Stitch Guide-trip design system */
+:root{
+  --ink:#131e19;
+  --muted:#57605e;
+  --green:#005144;
+  --green-strong:#005144;
+  --green-container:#176b5b;
+  --mint:#f0fcf4;
+  --mint-low:#eaf7ee;
+  --mint-mid:#e4f1e9;
+  --paper:#f0fcf4;
+  --line:#bec9c4;
+  --purple:#4f3989;
+  --purple-soft:#f2eafb;
+  --surface:#fff;
+}
+html,body{background:#dce7e0;color:var(--ink)}
+body{font-family:Inter,Pretendard,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}
+button{min-height:44px;-webkit-tap-highlight-color:transparent}
+.mobile-app{background:var(--mint);box-shadow:0 12px 55px rgba(0,32,26,.14)}
+.mobile-header{height:88px;padding:18px 16px 14px;border-bottom:1px solid rgba(190,201,196,.55);background:rgba(240,252,244,.97)}
+.mobile-header h1{color:var(--green);font-size:22px;font-weight:800;letter-spacing:-.02em}
+.mobile-header small{margin-bottom:3px;color:#6f7975;font-size:11px;font-weight:600}
+.header-actions{gap:8px}
+.round-button{width:44px;height:44px;border:1px solid rgba(111,121,117,.16);background:var(--mint-mid);color:var(--green)}
+.round-button.ready{background:#a5f1dd;color:#005143}
+.mobile-map-wrap{height:calc(100dvh - 158px);min-height:450px}
+.map-language{top:14px;left:16px;padding:8px 11px;border:1px solid rgba(190,201,196,.75);border-radius:999px;background:rgba(255,255,255,.94);color:#3f4945;font-size:11px;box-shadow:0 4px 12px rgba(0,32,26,.06)}
+.map-language span{background:var(--green)}
+.locate-button{right:16px;top:70px;width:46px;height:46px;border:1px solid var(--line);border-radius:50%;background:#fff;color:var(--green);box-shadow:0 4px 12px rgba(0,32,26,.08)}
+.mobile-pin{min-width:40px;height:40px;padding:0 10px;border-width:3px;border-radius:50% 50% 50% 10px;box-shadow:0 3px 10px rgba(0,32,26,.18)}
+.mobile-pin.active{height:46px;outline:5px solid rgba(79,57,137,.2)}
+.bottom-tabs{bottom:0;height:70px;border-color:rgba(190,201,196,.72);background:rgba(240,252,244,.98);backdrop-filter:blur(14px)}
+.bottom-tabs button{gap:5px;color:#3f4945;font-size:11px}
+.bottom-tabs button svg{width:22px;height:22px}
+.bottom-tabs button.active{color:var(--green);font-weight:800}
+.bottom-tabs button.active svg{padding:5px;width:38px;height:34px;border-radius:999px;background:#176b5b;color:#fff}
+.bottom-sheet{left:0;right:0;bottom:68px;max-height:68dvh;padding:7px 16px 24px;border:1px solid rgba(190,201,196,.68);border-bottom:0;border-radius:24px 24px 0 0;background:rgba(255,255,255,.985);box-shadow:0 -4px 20px rgba(0,32,26,.08)}
+.bottom-sheet.collapsed{max-height:44px!important}
+.sheet-toggle{top:-7px;height:34px;border-color:rgba(190,201,196,.35);background:rgba(255,255,255,.97)}
+.sheet-handle{width:40px;height:4px;background:#bec9c4}
+.sheet-heading{margin-bottom:16px}
+.sheet-heading small{color:#6f7975;font-size:11px;font-weight:600}
+.sheet-heading h2{color:#131e19;font-size:20px;line-height:26px;letter-spacing:-.02em}
+.icon-close{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:#3f4945}
+.category-scroll{gap:8px;padding-bottom:14px}
+.category-scroll button{min-height:38px;padding:8px 14px;border-color:color-mix(in srgb,var(--category-color) 45%,#bec9c4);background:color-mix(in srgb,var(--category-color) 8%,#fff);font-size:12px}
+.category-scroll button.active{box-shadow:0 0 0 2px #fff,0 0 0 4px color-mix(in srgb,var(--category-color) 28%,transparent)}
+.selected-place-photo{height:190px;margin-bottom:12px;border-radius:16px}
+.selected-place{gap:12px;padding:16px;border:1px solid var(--line);border-left:4px solid var(--place-color);border-radius:16px;background:#fff}
+.place-dot{flex-basis:42px;width:42px;height:42px;font-size:13px}
+.place-title b{font-size:16px;line-height:22px}
+.place-title em{font-size:12px}
+.place-title small{font-size:11px;line-height:16px}
+.place-main p{font-size:14px;line-height:20px}
+.place-meta{gap:6px}.place-meta span{padding:5px 8px;border-radius:999px;font-size:11px}
+.place-main .place-hours,.family-tip,.place-price{padding:10px 12px;border-radius:10px;font-size:12px!important;line-height:17px}
+.place-actions{gap:8px;margin-top:12px}
+.place-actions button,.place-actions a{height:48px;border-radius:10px;font-size:13px}
+.place-actions .save-action{flex-basis:48px}
+.place-actions a{width:88px}
+.ai-place-card{margin-top:12px;padding:16px;border:0;border-radius:16px;background:var(--purple-soft)}
+.ai-card-head span{color:var(--purple);font-size:13px}.ai-card-head small{padding:5px 8px;background:#e9ddff;color:var(--purple);font-size:10px}
+.ai-summary{margin:12px 0;color:#3f315f;font-size:14px;line-height:20px}
+.ai-famous>b,.ai-item-list>b{font-size:12px}
+.ai-famous span{padding:6px 9px;background:#e9ddff;color:var(--purple);font-size:11px}
+.ai-item-list{padding:12px;border-color:#cfbdff;border-radius:12px}
+.ai-item-list p{padding:9px 0;font-size:12px}.ai-item-list strong{font-size:11px}
+.ai-tip-grid{gap:8px;margin-top:12px}.ai-tip-grid>div{padding:12px;border-color:#e0d3ff;border-radius:12px}.ai-tip-grid small{font-size:10px}.ai-tip-grid p{font-size:12px;line-height:17px}
+.place-move-note,.ai-evidence,.ai-disclaimer{font-size:10px!important;line-height:15px!important}
+.spot-strip{gap:10px;margin-top:16px}
+.spot-strip button{flex-basis:156px;min-height:142px;padding:12px;border-color:var(--line);border-radius:12px}
+.spot-strip button.active{border-color:var(--place-color);box-shadow:0 0 0 2px color-mix(in srgb,var(--place-color) 20%,transparent)}
+.spot-strip span{width:28px;height:28px}.spot-strip b{margin-top:10px;font-size:13px}.spot-strip em,.spot-strip small,.spot-strip strong{font-size:10px}
+.spot-strip i{top:12px;right:10px;font-size:9px}
+.area-search,.hotel-search{height:50px;border-color:var(--line);border-radius:10px;background:var(--mint-low)}
+.area-search input,.hotel-search input{font-size:16px;font-weight:600}
+.area-search button,.hotel-search button{height:38px;padding:0 12px;font-size:11px}
+.quick-search{gap:8px;margin-top:12px}.quick-search button{min-height:38px;padding:8px 12px;border-color:var(--line);background:var(--mint-low);color:var(--green);font-size:11px;font-weight:700}
+.search-result-count{color:#6f7975;font-size:11px}
+.google-results,.saved-list{gap:10px;margin-top:14px}
+.google-result,.saved-row{grid-template-columns:1fr 44px 44px;gap:7px;padding:10px;border-color:var(--line);border-radius:12px}
+.result-main b,.saved-main b{font-size:13px;line-height:18px}.result-main small,.saved-main small{font-size:10px;line-height:15px}
+.result-save,.result-route,.saved-row>button:not(.saved-main){width:42px;height:42px;border:1px solid rgba(190,201,196,.6);background:var(--mint-low)}
+.empty-saved{font-size:12px}
+.trip-summary{padding:16px;border:1px solid rgba(190,201,196,.55);border-radius:16px;background:var(--mint-low)}
+.trip-summary b{font-size:15px}.trip-summary small{font-size:11px}
+.trip-dates{gap:10px;margin-top:12px}.trip-dates label{padding:12px;border-color:var(--line);border-radius:12px}.trip-dates span{font-size:10px}.trip-dates input{font-size:16px}
+.traveler-heading{margin-top:18px}.traveler-heading b{font-size:15px}.traveler-heading small{font-size:10px;line-height:15px}.traveler-heading>button{height:38px;font-size:11px}
+.traveler-list{gap:10px;margin-top:12px}.traveler-row{grid-template-columns:36px 1fr 86px 42px;gap:8px}.traveler-row>span{width:36px;height:36px;background:#a5f1dd;color:#00201a;font-size:11px}.traveler-row>input,.traveler-row>label{height:48px;border-color:var(--line);border-radius:12px}.traveler-row>input,.traveler-row>label input{font-size:16px}.traveler-row>button{width:42px;height:42px}
+.ai-profile-note{margin-top:16px;padding:16px;border:0;border-radius:16px;background:var(--purple-soft)}.ai-profile-note b{color:var(--purple);font-size:12px}.ai-profile-note p{font-size:11px;line-height:17px}
+.save-trip-button,.calculate-button,.guide-create-button{height:52px;border-radius:10px;background:var(--green);font-size:14px}
+.route-mode{gap:8px;padding:6px;border:1px solid var(--line);border-radius:999px;background:#fff}.route-mode button{height:48px;border-radius:999px;font-size:12px}.route-mode button.active{background:var(--green);color:#fff}
+.route-place-search{margin-top:12px;padding:12px;border-color:var(--line);background:var(--mint-low)}.route-search-target button{height:38px;font-size:11px}.route-search-input{grid-template-columns:22px 1fr 54px}.route-search-input input,.route-search-input>button{height:46px}.route-search-input input{font-size:16px}.route-search-input>button{font-size:11px}
+.route-selects{margin-top:12px;padding:10px 14px;border-color:var(--line);border-radius:16px;background:#fff}.route-selects label{min-height:58px}.route-selects label small{font-size:10px}.route-selects select{font-size:16px}
+.route-summary{gap:10px}.route-summary>div{padding:14px;border:1px solid rgba(190,201,196,.55);border-radius:12px;background:var(--mint-low)}.route-summary small{font-size:10px}.route-summary b{font-size:14px}
+.transit-route{padding:14px;border-color:var(--line);border-radius:16px;background:#fff}.transit-route-head b{font-size:14px}.transit-step b{font-size:12px}.transit-step small,.transit-route>p{font-size:10px}
+.guide-overlay{background:var(--mint)}
+.guide-toolbar{padding:10px;border-color:var(--line);background:rgba(240,252,244,.98)}.guide-toolbar>button{height:42px;background:var(--green);font-size:11px}.guide-toolbar .guide-close{width:42px;background:#fff;color:var(--ink)}
+.guide-scroll{padding:12px}.travel-guide{background:transparent}.guide-page{border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink)}
+.guide-title small,.guide-page-title small{color:var(--green)}.guide-title h2,.guide-page-title h2{color:var(--ink)}.guide-title p{color:var(--muted)}
+.guide-date{border-color:var(--line);background:var(--mint-low);color:var(--green)}
+.guide-map-board{border-color:var(--line);border-radius:12px}
+.guide-index>div{border-color:var(--line);background:#fff}.guide-index small{color:var(--muted)}
+.guide-page-title{border-bottom-color:var(--green)}
+.route-ribbon{border-color:var(--line);background:var(--mint-low)}.route-ribbon span,.guide-section-label{background:var(--green)}
+.guide-card-grid{gap:10px}.guide-place-card{border-color:var(--line);border-radius:12px;background:#fff}
+.guide-group{border-color:var(--line);border-radius:12px}.guide-group>div{background:var(--mint-mid)}
+.guide-checklist,.transit-tips{border-color:#89d5c1;background:var(--mint-low)}
+.ai-itinerary-page{background:#fff}.ai-day-list>section{border-color:var(--line);border-radius:12px}.ai-day-list h3{background:var(--green)}.ai-day-list h3 span{color:var(--green)}.ai-guide-tips>div{border:0;border-radius:12px;background:var(--purple-soft)}.ai-guide-tips b{color:var(--purple)}
+.guide-recommend-panel{border-color:var(--line);background:#fff}.guide-recommend-panel b{color:var(--green)}.guide-recommend-panel button{background:var(--green)}
+.subway-line{border-color:var(--line);background:var(--mint-low)}
+@media(max-width:760px){
+  .guide-page{padding:16px;border-radius:14px}
+  .guide-card-grid,.guide-group>div{grid-template-columns:1fr}
+  .guide-place-card>img,.guide-group article>img{height:150px}
+  .guide-place-card>p{height:auto}
+}
