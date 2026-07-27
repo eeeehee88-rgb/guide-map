@@ -1202,7 +1202,7 @@ export default function Home() {
       }}
     >
       <header className="mobile-header">
-        <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>오늘 어디로 갈까요?</h1></div>
+        <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>Guide-trip</h1></div>
         <div className="header-actions">
           <button className={`round-button ${tripSaved ? "ready" : ""}`} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
           <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
