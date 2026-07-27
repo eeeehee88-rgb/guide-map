@@ -24,6 +24,7 @@ type Point = {
   parkingOptions?: string[]; accessibility?: string[]; detailLoaded?: boolean;
   photoUrls?: string[]; paymentOptions?: string[]; photosPage?: string; reviewsPage?: string;
   detailedReviews?: {text:string;rating?:number;author?:string;time?:string}[];
+  priorityShop?: boolean;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type Traveler = { id:string; relation:string; age:string };
@@ -386,7 +387,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide-v8:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v9:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -874,7 +875,7 @@ export default function Home() {
         { label:"관광", query:"대표 관광지 명소", color:"#275fbd" },
         { label:"맛집", query:"현지인 인기 맛집", color:"#ef6a4c" },
         { label:"카페", query:"인기 카페 디저트", color:"#c56892" },
-        { label:"쇼핑", query:"쇼핑 백화점 전통시장", color:"#e54473" },
+        { label:"쇼핑", query:"쇼핑 백화점 대형 할인점 드럭스토어", color:"#e54473" },
         { label:"소품샵", query:"잡화점 소품샵 기념품 공예 편집숍", color:"#93701f" },
         { label:"주류", query:"사케 위스키 주류 전문점", color:"#8052a5" },
         { label:"이자카야·술집", query:"현지인 이자카야 술집", color:"#a65068" },
@@ -936,6 +937,51 @@ export default function Home() {
         });
       }));
       const categoryCandidates = batches.map((batch)=>batch.status==="fulfilled" ? batch.value : []);
+      const priorityRetailers = [
+        {query:"ドン・キホーテ",name:"돈키호테",must:true},
+        {query:"MEGAドン・キホーテ",name:"메가 돈키호테",must:true},
+        {query:"DAISO",name:"다이소",must:false},
+        {query:"マツモトキヨシ",name:"마츠모토키요시",must:false},
+        {query:"スギ薬局",name:"스기약국",must:false},
+        {query:"ロフト",name:"로프트",must:false},
+        {query:"ハンズ",name:"핸즈",must:false}
+      ];
+      const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
+      const retailBatches=await Promise.allSettled(priorityRetailers.map(async retailer=>{
+        const {places}=await Place.searchByText({
+          textQuery:`${travelArea.trim()} ${retailer.query}`,
+          fields:retailFields,
+          locationRestriction:bounds,
+          language:"ko",
+          maxResultCount:3
+        });
+        return places.filter((place:any)=>place.location && bounds.contains(place.location))
+          .sort((a:any,b:any)=>pointDistanceKm({lat:centerLat,lng:centerLng},{lat:a.location.lat(),lng:a.location.lng()})-pointDistanceKm({lat:centerLat,lng:centerLng},{lat:b.location.lat(),lng:b.location.lng()}))
+          .slice(0,retailer.must?2:1)
+          .map((place:any,index:number)=>{
+            const details=googlePlaceDetails(place,`${retailer.name} ${index+1}`);
+            return {
+              id:`guide-쇼핑-${place.id}`,name:details.name,sub:details.address,category:"검색" as const,
+              lat:place.location.lat(),lng:place.location.lng(),color:categoryColors["쇼핑"],
+              hours:details.hours,description:details.description,
+              tip:retailer.must?"여행 지역 주변에 있으면 반드시 포함하는 쇼핑 장소예요.":"여행 중 활용도가 높은 쇼핑·드럭스토어예요.",
+              query:place.googleMapsURI||place.displayName||"",placeType:"쇼핑",
+              rating:details.rating,reviewCount:details.reviewCount,businessStatus:details.businessStatus,
+              originalName:details.originalName,originalAddress:details.originalAddress,
+              googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,
+              photoUrl:place.photos?.[0]?.getURI?.({maxWidth:400,maxHeight:240}),
+              googlePlaceId:place.id,priorityShop:true,
+              recommendedMenu:retailer.must?"면세 쇼핑·일본 한정 과자·화장품·생활용품":"여행용품·기념품·생활용품"
+            } satisfies Point;
+          });
+      }));
+      const priorityShopping=retailBatches.flatMap(batch=>batch.status==="fulfilled"?batch.value:[])
+        .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
+      const shoppingIndex=types.findIndex(type=>type.label==="쇼핑");
+      if (shoppingIndex>=0) {
+        categoryCandidates[shoppingIndex]=[...priorityShopping,...categoryCandidates[shoppingIndex]]
+          .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
+      }
       const candidates = [0,1,2,3,4].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean))
         .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index)
         .slice(0,60);
@@ -1416,7 +1462,7 @@ export default function Home() {
                 return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
                   {spot.photoUrl ? <img src={spot.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span>}
                   <div>
-                    <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}</small>
+                    <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
                     <b>{spot.name}</b>
                     {spot.originalName&&<em>{spot.originalName}</em>}
                     <p>{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
@@ -1445,6 +1491,7 @@ export default function Home() {
                 </div>
                 {selected.category === "검색" && <div className="place-meta">
                   <span style={{background:pointColor(selected),color:"#fff",borderColor:pointColor(selected)}}>{guideGroup(selected)}</span>
+                  {selected.priorityShop&&<span className="priority-shop-badge">필수 쇼핑</span>}
                   {selected.placeType && <span>{selected.placeType}</span>}
                   {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
                   {selected.businessStatus && <span>{selected.businessStatus}</span>}
