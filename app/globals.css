@@ -172,3 +172,95 @@ button{min-height:44px;-webkit-tap-highlight-color:transparent}
   .guide-place-card>img,.guide-group article>img{height:150px}
   .guide-place-card>p{height:auto}
 }
+
+/* Stitch responsive and control consistency pass */
+button,input,select,textarea,a{-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{max-width:100%;box-sizing:border-box}
+input,select,textarea{min-width:0;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none}
+input:focus-visible,select:focus-visible,textarea:focus-visible{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,81,68,.12)}
+button:focus-visible,a:focus-visible{outline:3px solid rgba(0,81,68,.2);outline-offset:2px}
+button:disabled{cursor:not-allowed;opacity:.58}
+.bottom-sheet{overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable}
+.bottom-sheet button,.bottom-sheet a{box-sizing:border-box}
+.sheet-toggle{min-height:34px}
+.bottom-tabs button{min-width:0;min-height:0;border:0}
+.bottom-tabs span{overflow:hidden;max-width:100%;white-space:nowrap;text-overflow:ellipsis}
+.category-scroll,.quick-search,.spot-strip{scrollbar-width:none}
+.category-scroll::-webkit-scrollbar,.quick-search::-webkit-scrollbar,.spot-strip::-webkit-scrollbar{display:none}
+.category-scroll button,.quick-search button{flex-shrink:0;line-height:16px}
+.area-search,.hotel-search{width:100%;padding:0 5px 0 12px;overflow:hidden}
+.area-search input,.hotel-search input{width:0;height:100%;padding:0 4px;border:0!important;border-radius:0;background:transparent;box-shadow:none!important}
+.area-search button,.hotel-search button{flex:0 0 auto;margin:0}
+.google-result,.saved-row{width:100%;min-width:0;overflow:hidden}
+.result-main,.saved-main{width:100%;min-width:0;padding:0}
+.result-main span,.saved-main div{overflow:hidden}
+.result-save,.result-route,.saved-row>button:not(.saved-main){min-height:42px;padding:0;border:1px solid rgba(190,201,196,.75)}
+.selected-place{width:100%;min-width:0;overflow:hidden}
+.place-main,.place-title{min-width:0;width:100%}
+.place-title b,.place-title em,.place-title small{overflow-wrap:anywhere}
+.place-actions{width:100%;align-items:stretch}
+.place-actions>button:first-child{min-width:0}
+.place-actions .save-action{width:48px;min-width:48px;padding:0}
+.place-actions a{flex:0 0 88px}
+.ai-tip-grid>div,.ai-item-list{min-width:0}
+.ai-item-list p span{min-width:0;overflow-wrap:anywhere}
+.saved-hotel{grid-template-columns:24px minmax(0,1fr) auto;padding:12px;border:1px solid rgba(190,201,196,.65);border-radius:12px;background:var(--mint-low)}
+.saved-hotel b{font-size:13px}.saved-hotel small{font-size:10px}.saved-hotel button{min-height:36px;padding:0 8px;border:1px solid #efc8c2;border-radius:8px;background:#fff7f5}
+.current-location{min-height:64px;border-color:var(--line);border-radius:12px;background:#fff}
+.current-location div{min-width:0}.current-location b{font-size:13px}.current-location small{font-size:10px;line-height:15px}
+.search-results button{width:100%;min-width:0;min-height:58px;border-color:var(--line);border-radius:12px}
+.search-results button>div{min-width:0}.search-results b{font-size:13px}.search-results small,.privacy-note{font-size:10px;line-height:15px}
+.trip-dates label{min-width:0;overflow:hidden}
+.trip-dates input{height:30px;margin-top:4px;padding:0;border:0!important;border-radius:0;box-shadow:none!important}
+.traveler-heading{gap:10px}.traveler-heading>div{min-width:0}.traveler-heading>button{flex:0 0 auto;padding:0 12px;border:1px solid rgba(0,81,68,.14)}
+.traveler-row{grid-template-columns:36px minmax(0,1fr) 86px 42px;width:100%}
+.traveler-row>input{width:100%;padding:0 12px}
+.traveler-row>label{min-width:0;padding:0 8px}.traveler-row>label input{width:0;padding:0;border:0!important;box-shadow:none!important}
+.traveler-row>button{min-height:42px;border:1px solid #efd0ca}
+.route-heading-actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.clear-route{height:36px;min-height:36px;border-color:#e4b5ad;font-size:10px}
+.route-mode button{min-width:0;padding:0 5px;border:0}
+.route-place-search{min-width:0;overflow:hidden}
+.route-search-target button{min-width:0;border:1px solid transparent}
+.route-search-target button.active{border-color:rgba(0,81,68,.18)}
+.route-search-input{width:100%;min-width:0}
+.route-search-input input{width:100%;padding:0 10px}
+.route-search-input>button{min-width:54px;padding:0 7px;border:0}
+.route-search-results>button{width:100%;min-width:0;min-height:56px;border-color:var(--line);border-radius:10px}
+.route-search-results>button span{min-width:0;overflow:hidden}
+.route-selects{overflow:hidden}.route-selects label>div{min-width:0}
+.route-selects select{height:34px;padding:0 28px 0 0;border:0!important;border-radius:0;background-color:#fff;box-shadow:none!important;text-overflow:ellipsis}
+.calculate-button{border:1px solid var(--green)}
+.navigation-start{height:52px;min-height:52px;border-color:var(--green);border-radius:10px;color:var(--green);font-size:13px}
+.route-summary>div{min-width:0}.route-summary span{min-width:0}
+.guide-toolbar{min-width:0;overflow:hidden}.guide-toolbar>button{flex:0 0 auto;min-height:42px;border:1px solid transparent}
+.guide-date-fields{min-width:0}.guide-date-fields label{min-width:0;overflow:hidden}.guide-date-fields input{min-width:0;height:30px;padding:0 2px;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0;box-shadow:none!important}
+.guide-recommend-panel{min-width:0;overflow:hidden}.guide-recommend-panel input{min-width:0;height:42px;padding:0 10px;border-color:var(--line)}
+.guide-recommend-panel button{min-width:0;border:1px solid var(--green)}
+.guide-page,.guide-title>div,.guide-page-title{min-width:0}
+.guide-title h2,.guide-page-title h2,.guide-title p{overflow-wrap:anywhere}
+.guide-card-head b,.guide-place-card p,.guide-place-card em,.guide-group article{overflow-wrap:anywhere}
+@media(max-width:420px){
+  .mobile-header{padding-inline:14px}
+  .mobile-header h1{font-size:21px}
+  .round-button{width:42px;height:42px}
+  .bottom-sheet{padding-inline:14px}
+  .place-actions{gap:6px}
+  .place-actions a{flex-basis:78px;width:78px;font-size:12px}
+  .trip-dates{grid-template-columns:1fr}
+  .traveler-row{grid-template-columns:34px minmax(0,1fr) 74px 40px;gap:6px}
+  .traveler-row>span{width:34px;height:34px}
+  .route-mode button{font-size:11px}
+  .route-mode button svg{width:15px}
+  .ai-tip-grid,.route-summary{grid-template-columns:1fr}
+  .guide-toolbar{gap:5px}
+  .guide-toolbar>button{padding:0 8px}
+}
+@media(max-width:350px){
+  .mobile-header small{max-width:160px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .place-actions{flex-wrap:wrap}
+  .place-actions>button:first-child{flex-basis:calc(100% - 54px)}
+  .place-actions a{flex-basis:100%;width:100%}
+  .traveler-row{grid-template-columns:32px minmax(0,1fr) 68px}
+  .traveler-row>button{grid-column:3}
+}
