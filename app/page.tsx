@@ -76,6 +76,42 @@ function pointDistanceKm(a:{lat:number;lng:number}, b:{lat:number;lng:number}) {
   return 6371*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
+type TravelCountry = "JP" | "KR";
+
+function regionHintForArea(area:string):TravelCountry {
+  return /서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|수원|용인|성남|고양|강릉|춘천|전주|여수|포항|한국|대한민국/i.test(area) ? "KR" : "JP";
+}
+
+function geocodeCountry(result:any, fallback:TravelCountry):TravelCountry {
+  const code=result?.address_components?.find((item:any)=>item.types?.includes("country"))?.short_name;
+  return code==="KR" ? "KR" : code==="JP" ? "JP" : fallback;
+}
+
+function matchesPlaceKeyword(place:any, query:string) {
+  const normalize=(value:any)=>String(value||"").toLowerCase().replace(/[\s·ㆍ・\-_.()[\]]/g,"");
+  const raw=normalize(query);
+  const haystack=normalize([
+    place.displayName,place.formattedAddress,place.primaryTypeDisplayName,
+    ...(Array.isArray(place.types)?place.types:[])
+  ].join(" "));
+  const aliases:{test:RegExp;values:string[]}[]=[
+    {test:/편의점/,values:["편의점","conveniencestore","세븐일레븐","7eleven","로손","lawson","패밀리마트","familymart","미니스톱","ministop","cu","gs25"]},
+    {test:/카페|커피/,values:["카페","cafe","coffee","커피","喫茶"]},
+    {test:/식당|맛집|음식|가족식당/,values:["식당","음식점","restaurant","food","레스토랑","요리"]},
+    {test:/마트|슈퍼/,values:["마트","슈퍼","supermarket","grocery"]},
+    {test:/약국|드럭/,values:["약국","pharmacy","drugstore","드럭스토어"]},
+    {test:/주차장/,values:["주차장","parking"]},
+    {test:/호텔|숙소/,values:["호텔","hotel","숙박","lodging","여관","료칸"]},
+    {test:/관광|명소/,values:["관광","tourist","attraction","명소","박물관","공원","신사","사찰","성"]},
+    {test:/디저트|베이커리|빵/,values:["디저트","dessert","베이커리","bakery","제과","빵"]},
+    {test:/술집|이자카야|바/,values:["술집","이자카야","bar","pub","居酒屋"]}
+  ];
+  const alias=aliases.find(item=>item.test.test(query));
+  if (alias) return alias.values.some(value=>haystack.includes(normalize(value)));
+  const tokens=raw.split(/[,/]+/).filter(token=>token.length>=2 && !["근처","주변","가족","추천","인기"].includes(token));
+  return tokens.length>0 && tokens.every(token=>haystack.includes(token));
+}
+
 const placeTranslations: [string, string][] = [
   ["犬山城下町", "이누야마 성하마을"], ["犬山城", "이누야마성"], ["犬山駅", "이누야마역"],
   ["三光稲荷神社", "산코 이나리 신사"], ["針綱神社", "하리쓰나 신사"], ["成田山名古屋別院大聖寺", "나리타산 나고야 별원 다이쇼지"],
@@ -249,7 +285,15 @@ function recommendedMenuFor(name:string, type:string, primaryType?:string) {
   return "";
 }
 
-function priceGuideFor(type:string) {
+function priceGuideFor(type:string,country:TravelCountry="JP") {
+  if (country==="KR") {
+    if (type === "맛집") return "약 ₩8,000~25,000 / 1인";
+    if (type === "카페" || type === "디저트") return "약 ₩4,000~12,000 / 1인";
+    if (type === "이자카야·술집") return "약 ₩20,000~50,000 / 1인";
+    if (type === "주류") return "약 ₩5,000~40,000 / 상품";
+    if (type === "편의점") return "약 ₩1,000~10,000 / 상품";
+    if (type === "온천·휴식") return "약 ₩10,000~30,000 / 1인";
+  }
   if (type === "맛집") return "약 ¥800~2,500 / 1인";
   if (type === "카페" || type === "디저트") return "약 ¥500~1,500 / 1인";
   if (type === "이자카야·술집") return "약 ¥2,000~4,500 / 1인";
@@ -367,6 +411,7 @@ export default function Home() {
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
   const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
   const [travelArea, setTravelArea] = useState("이누야마");
+  const [travelCountry, setTravelCountry] = useState<TravelCountry>("JP");
   const [areaMoving, setAreaMoving] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideStart, setGuideStart] = useState("");
@@ -394,8 +439,8 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = () => `ai-trip-guide-v10:${JSON.stringify({
-    area:travelArea.trim(),start:guideStart,end:guideEnd,
+  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v11:${JSON.stringify({
+    area:travelArea.trim(),country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
 
@@ -498,7 +543,7 @@ export default function Home() {
       });
     };
     const loadInsight=async()=>{
-      const cacheKey=`ai-place-detail-v2:${selected.googlePlaceId}`;
+      const cacheKey=`ai-place-detail-v3:${travelCountry}:${selected.googlePlaceId}`;
       try {
         const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
         if (cached?.createdAt>Date.now()-7*24*60*60*1000 && cached.detail) {
@@ -514,6 +559,8 @@ export default function Home() {
             name:selected.name,originalName:selected.originalName,type:selected.placeType||group,
             googleSummary:selected.description,
             googlePrice:selected.googlePriceRange||selected.googlePriceLevel,
+            country:travelCountry,
+            currency:travelCountry==="KR"?"KRW (₩)":"JPY (¥)",
             reviews:selected.detailedReviews?.map(review=>review.text)||selected.reviewHighlights||[]
           })
         });
@@ -529,7 +576,7 @@ export default function Home() {
     };
     void loadInsight();
     return()=>{cancelled=true;};
-  },[placeDetailOpen,selected.id,selected.googlePlaceId,selected.detailLoaded,selected.detailAiLoaded]);
+  },[placeDetailOpen,selected.id,selected.googlePlaceId,selected.detailLoaded,selected.detailAiLoaded,travelCountry]);
 
   useEffect(() => {
     if (!placeDetailOpen) return;
@@ -605,6 +652,8 @@ export default function Home() {
     }
     const savedArea = localStorage.getItem("travel-search-area");
     if (savedArea) setTravelArea(savedArea);
+    const savedCountry=localStorage.getItem("travel-search-country");
+    if (savedCountry==="KR"||savedCountry==="JP") setTravelCountry(savedCountry);
     const savedTrip = localStorage.getItem("family-trip-profile");
     if (savedTrip) {
       try {
@@ -824,14 +873,15 @@ export default function Home() {
       const { Place } = await google.maps.importLibrary("places");
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
-        textQuery:`${query} ${travelArea.trim() || "일본"}`,
-        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"],
+        textQuery:`${query} ${travelArea.trim() || (travelCountry==="KR"?"대한민국":"일본")}`,
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","types","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"],
         ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
         maxResultCount:12
       });
       const next:Point[] = places.filter((place:any) => {
         if (!place.location) return false;
+        if (!matchesPlaceKeyword(place, query)) return false;
         const point = { lat:place.location.lat(), lng:place.location.lng() };
         const currentCenter = areaPoint || (isInuyamaArea ? station : null);
         const insideBounds = areaBounds?.contains ? areaBounds.contains(point) : true;
@@ -878,8 +928,14 @@ export default function Home() {
     try {
       const google = (window as any).google;
       const geocoder = new google.maps.Geocoder();
-      const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
+      const hint=regionHintForArea(travelArea.trim());
+      const { results:areaResults } = await geocoder.geocode({
+        address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
+      });
       if (!areaResults?.[0]) throw new Error();
+      const country=geocodeCountry(areaResults[0],hint);
+      setTravelCountry(country);
+      localStorage.setItem("travel-search-country",country);
       mapRef.current?.setCenter(areaResults[0].geometry.location);
       mapRef.current?.setZoom(13);
       setAreaBounds(areaResults[0].geometry.viewport);
@@ -891,7 +947,7 @@ export default function Home() {
       aiGuidePlanRef.current=null;
       aiGuideAreaRef.current="";
       setCategory("전체");
-      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport);
+      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport, country);
     } catch {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
     } finally {
@@ -899,7 +955,7 @@ export default function Home() {
     }
   };
 
-  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any) => {
+  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any, providedCountry?:TravelCountry) => {
     if (!travelArea.trim()) return;
     let fallbackPoints:Point[] = [];
     setGuideLoading(true);
@@ -911,13 +967,20 @@ export default function Home() {
       const google = (window as any).google;
       let center = providedCenter;
       let bounds = providedBounds;
+      let activeCountry=providedCountry || travelCountry || regionHintForArea(travelArea.trim());
       if (!center?.lat) {
         const geocoder = new google.maps.Geocoder();
-        const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
+        const hint=regionHintForArea(travelArea.trim());
+        const { results:areaResults } = await geocoder.geocode({
+          address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
+        });
         if (!areaResults?.[0]) throw new Error();
+        activeCountry=geocodeCountry(areaResults[0],hint);
         center = areaResults[0].geometry.location;
         bounds = areaResults[0].geometry.viewport;
       }
+      setTravelCountry(activeCountry);
+      localStorage.setItem("travel-search-country",activeCountry);
       if (!bounds) throw new Error();
       setAreaBounds(bounds);
       mapRef.current?.setCenter(center);
@@ -927,14 +990,15 @@ export default function Home() {
       const nextAreaPoint:Point = {
         id:"area-center", name:`${travelArea.trim()} 중심`, sub:`${travelArea.trim()} 여행 기준 위치`,
         category:"검색", lat:centerLat, lng:centerLng, color:"#174da4", hours:"",
-        description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"", query:`${travelArea.trim()} 일본`
+        description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"",
+        query:`${travelArea.trim()} ${activeCountry==="KR"?"대한민국":"일본"}`
       };
       setAreaPoint(nextAreaPoint);
       setSelected(nextAreaPoint);
       setOriginId("area-center");
       localStorage.setItem("travel-search-area", travelArea.trim());
       try {
-        const cached = JSON.parse(localStorage.getItem(aiCacheKey()) || "null");
+        const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry)) || "null");
         if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
           setAiOverview(cached.overview || "");
           setGuideRecommendations(cached.recommendations);
@@ -955,7 +1019,7 @@ export default function Home() {
         { label:"쇼핑", query:"쇼핑 백화점 대형 할인점 드럭스토어", color:"#e54473" },
         { label:"편의점", query:"편의점", color:"#168a55" },
         { label:"소품샵", query:"잡화점 소품샵 기념품 공예 편집숍", color:"#93701f" },
-        { label:"주류", query:"사케 위스키 주류 전문점", color:"#8052a5" },
+        { label:"주류", query:activeCountry==="KR"?"주류 전문점 와인 위스키":"사케 위스키 주류 전문점", color:"#8052a5" },
         { label:"이자카야·술집", query:"현지인 이자카야 술집", color:"#a65068" },
         { label:"온천·휴식", query:"온천 스파 가족 휴식", color:"#6b55b5" },
         { label:"디저트", query:"유명 디저트 베이커리", color:"#d36a9a" },
@@ -1027,7 +1091,7 @@ export default function Home() {
         {query:"ハンズ",name:"핸즈",must:false}
       ];
       const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
-      const retailBatches=await Promise.allSettled(priorityRetailers.map(async retailer=>{
+      const retailBatches=activeCountry==="JP" ? await Promise.allSettled(priorityRetailers.map(async retailer=>{
         const {places}=await Place.searchByText({
           textQuery:`${travelArea.trim()} ${retailer.query}`,
           fields:retailFields,
@@ -1054,7 +1118,7 @@ export default function Home() {
               recommendedMenu:retailer.must?"면세 쇼핑·일본 한정 과자·화장품·생활용품":"여행용품·기념품·생활용품"
             } satisfies Point;
           });
-      }));
+      })) : [];
       const priorityShopping=retailBatches.flatMap(batch=>batch.status==="fulfilled"?batch.value:[])
         .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
       const shoppingIndex=types.findIndex(type=>type.label==="쇼핑");
@@ -1073,8 +1137,8 @@ export default function Home() {
         color:pointColor(point),
         aiReason:point.tip,
         aiFamousItems:point.recommendedMenu ? [point.recommendedMenu] : [],
-        aiRecommendedItems:point.recommendedMenu ? [{name:point.recommendedMenu,price:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point))}] : [],
-        aiPrice:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point)),
+        aiRecommendedItems:point.recommendedMenu ? [{name:point.recommendedMenu,price:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry)}] : [],
+        aiPrice:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry),
         aiFamilyTip:point.tip,
         aiVisitTip:point.hours || "영업시간과 혼잡도는 방문 전에 확인해 주세요.",
         aiParkingTip:"전용·인근 주차장은 Google 지도에서 확인해 주세요."
@@ -1090,6 +1154,7 @@ export default function Home() {
         body:JSON.stringify({
           trip:{
             area:travelArea.trim(), startDate:guideStart, endDate:guideEnd,
+            country:activeCountry,currency:activeCountry==="KR"?"KRW (₩)":"JPY (¥)",
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
@@ -1117,7 +1182,7 @@ export default function Home() {
           originalName:point.originalName || (localizedName!==point.name ? point.name : undefined),
           color:pointColor(point),
           aiReason:ai.reason,
-          aiPrice:point.googlePriceRange || ai.priceGuide || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point)),
+          aiPrice:point.googlePriceRange || ai.priceGuide || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry),
           aiFamousItems:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems : point.recommendedMenu ? [point.recommendedMenu] : [],
           aiRecommendedItems:Array.isArray(ai.recommendedItems) ? ai.recommendedItems
             .filter((item:any)=>item?.name)
@@ -1152,7 +1217,7 @@ export default function Home() {
       aiGuidePlanRef.current=preparedGuide;
       aiGuideAreaRef.current=travelArea.trim();
       try {
-        localStorage.setItem(aiCacheKey(),JSON.stringify({
+        localStorage.setItem(aiCacheKey(activeCountry),JSON.stringify({
           createdAt:Date.now(),overview:aiData.result.overview || "",
           area:travelArea.trim(),recommendations:next,guide:preparedGuide
         }));
@@ -1206,7 +1271,7 @@ export default function Home() {
         ? { lat:areaPoint.lat, lng:areaPoint.lng }
         : mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
-        textQuery:`${hotelQuery.trim()} ${travelArea.trim()} 일본`,
+        textQuery:`${hotelQuery.trim()} ${travelArea.trim()} ${travelCountry==="KR"?"대한민국":"일본"}`,
         fields:["id","displayName","formattedAddress","location","primaryTypeDisplayName"],
         ...(center ? { locationBias:{ center, radius:30000 } } : {}),
         language:"ko",
@@ -1214,16 +1279,16 @@ export default function Home() {
       });
       const next:SearchResult[] = places.filter((place:any)=>place.location).map((place:any)=>({
         name:koreanPlaceText(place.displayName, koreanPlaceText(place.primaryTypeDisplayName, "숙소")),
-        display_name:koreanPlaceText(place.formattedAddress, "일본 현지 주소"),
+        display_name:koreanPlaceText(place.formattedAddress, travelCountry==="KR"?"대한민국 현지 주소":"일본 현지 주소"),
         originalName:place.displayName,
         originalAddress:place.formattedAddress,
         lat:String(place.location.lat()),
         lon:String(place.location.lng())
       }));
       setResults(next);
-      if (!next.length) setRouteError("검색 결과가 없어요. 숙소명 또는 일본 주소를 조금 더 자세히 입력해 주세요.");
+      if (!next.length) setRouteError(`검색 결과가 없어요. 숙소명 또는 ${travelCountry==="KR"?"한국":"일본"} 주소를 조금 더 자세히 입력해 주세요.`);
     } catch {
-      setRouteError("숙소 검색에 실패했어요. 숙소명이나 일본 주소로 다시 검색해 주세요.");
+      setRouteError(`숙소 검색에 실패했어요. 숙소명이나 ${travelCountry==="KR"?"한국":"일본"} 주소로 다시 검색해 주세요.`);
     } finally {
       setSearching(false);
     }
@@ -1243,7 +1308,7 @@ export default function Home() {
       const { Place } = await google.maps.importLibrary("places");
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
-        textQuery:`${routeSearchQuery.trim()} 일본`,
+        textQuery:`${routeSearchQuery.trim()} ${travelCountry==="KR"?"대한민국":"일본"}`,
         fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName"],
         ...(center ? { locationBias:{ center, radius:50000 } } : {}),
         language:"ko",
@@ -1260,7 +1325,7 @@ export default function Home() {
         };
       });
       setRouteSearchResults(next);
-      if (!next.length) setRouteError("일본 내에서 검색 결과를 찾지 못했어요. 지역명과 장소명을 함께 입력해 보세요.");
+      if (!next.length) setRouteError(`${travelCountry==="KR"?"한국":"일본"} 내에서 검색 결과를 찾지 못했어요. 지역명과 장소명을 함께 입력해 보세요.`);
     } catch {
       setRouteError("길찾기 장소 검색에 실패했어요. 장소명이나 주소를 다시 확인해 주세요.");
     } finally {
@@ -1466,6 +1531,7 @@ export default function Home() {
         body:JSON.stringify({
           trip:{
             area:travelArea,startDate:guideStart,endDate:guideEnd,
+            country:travelCountry,currency:travelCountry==="KR"?"KRW (₩)":"JPY (¥)",
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "1일",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
@@ -1736,7 +1802,7 @@ export default function Home() {
             {hotel && <div className="saved-hotel"><Building2 size={19}/><div><b>{hotel.name}</b><small>{hotel.address}</small></div><button onClick={() => {localStorage.removeItem("inuyama-hotel");setHotel(null);setOriginId("station");}}>삭제</button></div>}
             <div className="hotel-search">
               <Search size={18}/>
-              <input value={hotelQuery} onChange={(e)=>setHotelQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchHotel()} placeholder="숙소명 또는 일본 주소 입력"/>
+              <input value={hotelQuery} onChange={(e)=>setHotelQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchHotel()} placeholder={`숙소명 또는 ${travelCountry==="KR"?"한국":"일본"} 주소 입력`}/>
               <button onClick={searchHotel}>{searching ? "검색 중" : "검색"}</button>
             </div>
             <button className="current-location" onClick={useCurrentLocation}><LocateFixed size={18}/><div><b>현재 위치 지도에 표시</b><small>이 기기의 위치를 빨간 점으로 표시하며 숙소로 저장하지 않아요</small></div></button>
@@ -1768,7 +1834,7 @@ export default function Home() {
               {routeSearchResults.length > 0 && <div className="route-search-results">
                 {routeSearchResults.map((point)=><button key={point.id} onClick={()=>chooseRouteSearchPlace(point)}><MapPin size={15}/><span><b>{point.name}</b>{point.originalName&&<em>{point.originalName}</em>}<small>{point.sub}</small></span></button>)}
               </div>}
-              <small className="route-search-help">현재 여행 지역과 관계없이 일본 전역의 장소를 검색할 수 있어요.</small>
+              <small className="route-search-help">현재 여행 지역과 관계없이 {travelCountry==="KR"?"한국":"일본"} 전역의 장소를 검색할 수 있어요.</small>
             </div>
             <div className="route-selects">
               <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{routeSearchPoints.map((p)=><option key={`route-from-${p.id}`} value={p.id}>직접 검색 · {p.name}</option>)}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
@@ -1833,8 +1899,8 @@ export default function Home() {
                 const markerParams = mapPlaces.map((point,index) =>
                   `&markers=${encodeURIComponent(`color:0x${pointColor(point).replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
                 ).join("");
-                const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} 일본`;
-                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
+                const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} ${travelCountry==="KR"?"대한민국":"일본"}`;
+                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 const renderGuideGroups = (groups:string[]) => groups.map((group) => {
                   const items = guidePlaces.filter((point)=>guideGroup(point)===group).slice(0,8);
@@ -1848,7 +1914,7 @@ export default function Home() {
                       <small>{point.hours || "방문 전 운영시간 확인"}</small>
                       <p>{point.aiReason || point.description}</p>
                       <em>{["맛집","카페","디저트","이자카야·술집"].includes(group) ? "추천 메뉴" : ["쇼핑","소품샵","전통시장","주류"].includes(group) ? "추천 상품" : "추천 포인트"} · {point.aiRecommendedItems?.map((item)=>`${item.name} ${item.price}`).join(" · ") || point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
-                      <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || group)}</em>
+                      <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || group,travelCountry)}</em>
                       {point.aiFamilyTip&&<footer>가족 팁 · {point.aiFamilyTip}</footer>}
                     </article>)}</div>
                   </section>;
@@ -1901,7 +1967,7 @@ export default function Home() {
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
                         <p>{point.aiReason || point.description}</p>
                         <em>{guideGroup(point)==="맛집"||guideGroup(point)==="카페"||guideGroup(point)==="디저트" ? "추천 메뉴" : "추천 포인트"} · {point.aiRecommendedItems?.map((item)=>`${item.name} ${item.price}`).join(" · ") || point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
-                        <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || guideGroup(point))}</em>
+                        <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || guideGroup(point),travelCountry)}</em>
                         {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
                         <footer><MapPin size={13}/>{point.sub}</footer>
                       </div>)}
