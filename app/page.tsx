@@ -340,6 +340,12 @@ export default function Home() {
   const combinedPlacePool = [...regionalPlaceResults, ...recommendationPool]
     .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id || item.name===point.name)===index);
   const visibleSpots = category === "전체" ? combinedPlacePool : combinedPlacePool.filter((p) => guideGroup(p) === category);
+  const recommendationCenter = areaPoint || (isInuyamaArea ? station : null);
+  const sortedVisibleSpots = [...visibleSpots].sort((a,b)=>{
+    if (!recommendationCenter) return Number(b.rating || 0)-Number(a.rating || 0);
+    return pointDistanceKm(recommendationCenter,a)-pointDistanceKm(recommendationCenter,b);
+  });
+  const listedSpots = category === "전체" ? sortedVisibleSpots.slice(0,15) : sortedVisibleSpots;
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -1255,6 +1261,26 @@ export default function Home() {
                 return <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}{count>0&&<small>{count}</small>}</button>;
               })}
             </div>
+            <div className="recommendation-list-head">
+              <div><b>{category === "전체" ? "가까운 추천 장소" : `${category} 추천`}</b><small>{travelArea} 중심에서 가까운 순서</small></div>
+              <span>{listedSpots.length}곳</span>
+            </div>
+            <div className="recommendation-list">
+              {listedSpots.map((spot)=>{
+                const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
+                return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
+                  {spot.photoUrl ? <img src={spot.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span>}
+                  <div>
+                    <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}</small>
+                    <b>{spot.name}</b>
+                    {spot.originalName&&<em>{spot.originalName}</em>}
+                    <p>{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
+                    <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
+                  </div>
+                  <Navigation size={18}/>
+                </button>;
+              })}
+            </div>
             {selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
             <div className="selected-place" style={{"--place-color":pointColor(selected)} as React.CSSProperties}>
               <span className="place-dot" style={{background:pointColor(selected)}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
@@ -1302,9 +1328,6 @@ export default function Home() {
               {selected.aiEvidence&&<p className="ai-evidence">정보 근거 · {selected.aiEvidence}</p>}
               <small className="ai-disclaimer">AI가 Google 장소 후보와 등록한 여행 구성으로 만든 추천 정보예요. 가격·메뉴·영업시간은 방문 전에 확인해 주세요.</small>
             </div>}
-            <div className="spot-strip">
-              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span><i>{guideGroup(spot)}</i><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.aiRecommendedItems?.[0]?.name || spot.sub}</small>{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</button>)}
-            </div>
           </>
         )}
 
