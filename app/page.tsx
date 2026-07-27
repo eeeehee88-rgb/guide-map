@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  BookOpen, Building2, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Printer, Search, Trash2, X
+  BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
+  Heart, MapPin, Navigation, Printer, Search, TrainFront, Trash2, X
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
@@ -18,7 +18,8 @@ type Point = {
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
-type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean };
+type TransitStep = { instruction:string; line?:string; vehicle?:string; departure?:string; arrival?:string; stops?:number; minutes:number };
+type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean; transitSteps?:TransitStep[]; transfers?:number };
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -227,7 +228,7 @@ export default function Home() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [originId, setOriginId] = useState("station");
   const [destinationId, setDestinationId] = useState("castle");
-  const [mode, setMode] = useState<"walk" | "drive">("walk");
+  const [mode, setMode] = useState<"walk" | "drive" | "transit">("walk");
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState("");
@@ -710,24 +711,55 @@ export default function Home() {
     setRouteLoading(true);
     setRouteError("");
     try {
-      const base = mode === "walk" ? "https://routing.openstreetmap.de/routed-foot" : "https://router.project-osrm.org";
-      const res = await fetch(`${base}/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      const first = data.routes?.[0];
-      if (!first) throw new Error();
-      const next = {
-        minutes:Math.max(1, Math.round(first.duration/60)),
-        distance:first.distance/1000,
-        coordinates:first.geometry.coordinates.map(([lng,lat]:[number,number]) => [lat,lng] as [number,number])
+      const google = (window as any).google;
+      if (!google?.maps) throw new Error();
+      const service = new google.maps.DirectionsService();
+      const travelMode = mode === "walk" ? google.maps.TravelMode.WALKING
+        : mode === "drive" ? google.maps.TravelMode.DRIVING
+        : google.maps.TravelMode.TRANSIT;
+      const result = await service.route({
+        origin:{lat:a.lat,lng:a.lng},
+        destination:{lat:b.lat,lng:b.lng},
+        travelMode,
+        ...(mode === "transit" ? { transitOptions:{ departureTime:new Date(), modes:[
+          google.maps.TransitMode.BUS, google.maps.TransitMode.RAIL, google.maps.TransitMode.SUBWAY, google.maps.TransitMode.TRAIN
+        ] } } : {})
+      });
+      const first = result.routes?.[0];
+      const leg = first?.legs?.[0];
+      if (!first || !leg) throw new Error();
+      const transitSteps:TransitStep[] | undefined = mode === "transit" ? leg.steps.map((step:any) => {
+        const detail = step.transit;
+        const lineName = detail?.line?.short_name || detail?.line?.name;
+        return {
+          instruction:(step.instructions || "").replace(/<[^>]+>/g, ""),
+          line:lineName,
+          vehicle:detail?.line?.vehicle?.name,
+          departure:detail?.departure_stop?.name,
+          arrival:detail?.arrival_stop?.name,
+          stops:detail?.num_stops,
+          minutes:Math.max(1, Math.round((step.duration?.value || 60) / 60))
+        };
+      }) : undefined;
+      const next:RouteInfo = {
+        minutes:Math.max(1, Math.round((leg.duration?.value || 60)/60)),
+        distance:(leg.distance?.value || 0)/1000,
+        coordinates:first.overview_path.map((point:any) => [point.lat(),point.lng()] as [number,number]),
+        transitSteps,
+        transfers:transitSteps ? Math.max(0, transitSteps.filter((step)=>step.line).length - 1) : undefined
       };
       setRoute(next);
       drawRoute(next);
     } catch {
-      const next = calculateFallback(a,b);
-      setRoute(next);
-      setRouteError("실시간 경로 연결이 원활하지 않아 직선거리 기반 예상시간을 표시했어요.");
-      drawRoute(next);
+      if (mode === "transit") {
+        setRoute(null);
+        setRouteError("페이지에서 대중교통 경로를 불러오지 못했어요. 아래 Google 지도 버튼에서 최신 열차·버스 경로를 바로 확인해 주세요.");
+      } else {
+        const next = calculateFallback(a,b);
+        setRoute(next);
+        setRouteError("실시간 경로 연결이 원활하지 않아 직선거리 기반 예상시간을 표시했어요.");
+        drawRoute(next);
+      }
     } finally {
       setRouteLoading(false);
     }
@@ -762,7 +794,7 @@ export default function Home() {
     const params = new URLSearchParams({
       api:"1",
       destination:`${destination.lat},${destination.lng}`,
-      travelmode:mode === "walk" ? "walking" : "driving",
+      travelmode:mode === "walk" ? "walking" : mode === "drive" ? "driving" : "transit",
       dir_action:"navigate"
     });
     if (origin.id !== "current-location") {
@@ -927,6 +959,7 @@ export default function Home() {
             <div className="route-mode">
               <button className={mode==="walk"?"active":""} onClick={()=>setMode("walk")}><Footprints size={17}/>도보</button>
               <button className={mode==="drive"?"active":""} onClick={()=>setMode("drive")}><Car size={17}/>자동차</button>
+              <button className={mode==="transit"?"active":""} onClick={()=>setMode("transit")}><TrainFront size={17}/>대중교통</button>
             </div>
             <div className="route-selects">
               <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
@@ -934,8 +967,24 @@ export default function Home() {
               <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
             </div>
             <button className="calculate-button" onClick={getRoute} disabled={routeLoading}>{routeLoading ? "경로 계산 중…" : <><Navigation size={18}/> 이동시간 계산하기</>}</button>
-            <a className="navigation-start" href={googleNavigationUrl()} target="_blank" rel="noreferrer"><Navigation size={18}/>Google 지도 내비게이션 시작</a>
+            <a className="navigation-start" href={googleNavigationUrl()} target="_blank" rel="noreferrer"><Navigation size={18}/>Google 지도에서 {mode === "transit" ? "대중교통 경로" : "내비게이션"} 열기</a>
             {route && <div className="route-summary"><div><Clock3/><span><small>예상 이동시간</small><b>약 {route.minutes}분</b></span></div><div><Navigation/><span><small>이동거리</small><b>{distanceText(route.distance)}</b></span></div></div>}
+            {route?.transitSteps && route.transitSteps.length > 0 && (
+              <div className="transit-route">
+                <div className="transit-route-head"><b>대중교통 상세 경로</b><span>환승 {route.transfers || 0}회</span></div>
+                {route.transitSteps.map((step,index) => (
+                  <div className="transit-step" key={`${step.line || step.instruction}-${index}`}>
+                    <span className={step.line ? "ride" : "walk"}>{step.line ? (/버스|bus/i.test(step.vehicle || "") ? <Bus size={15}/> : <TrainFront size={15}/>) : <Footprints size={15}/>}</span>
+                    <div>
+                      <b>{step.line || step.instruction || "도보 이동"}</b>
+                      {step.line && <small>{step.departure} → {step.arrival}{step.stops ? ` · ${step.stops}개 정류장` : ""}</small>}
+                    </div>
+                    <strong>{step.minutes}분</strong>
+                  </div>
+                ))}
+                <p>운행시간·승강장·지연 정보는 출발 직전 Google 지도에서 다시 확인해 주세요.</p>
+              </div>
+            )}
             {routeError && <p className="route-error">{routeError}</p>}
           </>
         )}
