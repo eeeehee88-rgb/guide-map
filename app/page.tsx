@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Building2, Car, Check, ChevronDown, ChevronUp, Clock3, Footprints, LocateFixed,
-  MapPin, Navigation, Search, SlidersHorizontal, X
+  Heart, MapPin, Navigation, Search, SlidersHorizontal, Trash2, X
 } from "lucide-react";
 
 type Category = "전체" | "맛집" | "카페" | "역사";
 type Point = {
-  id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소";
+  id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
@@ -49,7 +49,7 @@ export default function Home() {
   const [googleReady, setGoogleReady] = useState(false);
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
-  const [sheet, setSheet] = useState<"places" | "route" | "hotel">("places");
+  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel">("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
@@ -61,12 +61,16 @@ export default function Home() {
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState("");
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [placeResults, setPlaceResults] = useState<Point[]>([]);
+  const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
     color:"#7a5caf", hours:"", description:"내가 등록한 숙소", tip:"", query:hotel.address
   } : null;
-  const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots];
+  const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || station;
   const visibleSpots = category === "전체" ? spots : spots.filter((p) => p.category === category);
 
@@ -78,6 +82,10 @@ export default function Home() {
         setHotel(parsed);
         setOriginId("hotel");
       } catch {}
+    }
+    const savedList = localStorage.getItem("inuyama-saved-places");
+    if (savedList) {
+      try { setSavedPlaces(JSON.parse(savedList)); } catch {}
     }
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
@@ -97,7 +105,7 @@ export default function Home() {
           resolve();
         };
         const script = document.createElement("script");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=ko&region=KR&v=weekly&callback=${callback}`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=ko&region=KR&v=weekly&libraries=places&callback=${callback}`;
         script.async = true;
         script.onerror = () => reject(new Error("Google Maps load failed"));
         document.head.appendChild(script);
@@ -121,10 +129,41 @@ export default function Home() {
         gestureHandling:"greedy",
         clickableIcons:true
       });
+      mapRef.current.addListener("click", async (event:any) => {
+        if (!event.placeId) return;
+        event.stop();
+        try {
+          const { Place } = await google.maps.importLibrary("places");
+          const place = new Place({ id:event.placeId });
+          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI"] });
+          if (!place.location) return;
+          const point:Point = {
+            id:`google-${place.id}`,
+            name:place.displayName || "지도에서 선택한 장소",
+            sub:place.formattedAddress || "Google 지도 장소",
+            category:"검색",
+            lat:place.location.lat(),
+            lng:place.location.lng(),
+            color:"#356fbd",
+            hours:"",
+            description:place.formattedAddress || "Google 지도에서 선택한 장소",
+            tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
+            query:place.googleMapsURI || place.displayName || ""
+          };
+          setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
+          setSelected(point);
+          setSheet("places");
+          setSheetCollapsed(false);
+        } catch {
+          setRouteError("선택한 장소 정보를 불러오지 못했어요.");
+        }
+      });
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots].forEach((point) => {
+    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces]
+      .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
+    markerPoints.forEach((point) => {
       const marker = new google.maps.Marker({
         map:mapRef.current,
         position:{ lat:point.lat, lng:point.lng },
@@ -153,7 +192,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -169,6 +208,52 @@ export default function Home() {
     setSheet("route");
     mapRef.current?.setCenter({lat:next.lat,lng:next.lng});
     mapRef.current?.setZoom(16);
+  };
+
+  const persistSavedPlaces = (next: Point[]) => {
+    setSavedPlaces(next);
+    localStorage.setItem("inuyama-saved-places", JSON.stringify(next));
+  };
+
+  const toggleSavedPlace = (point: Point) => {
+    const exists = savedPlaces.some((item) => item.id === point.id);
+    persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
+  };
+
+  const searchGooglePlaces = async () => {
+    if (!placeQuery.trim()) return;
+    setPlaceSearching(true);
+    setPlaceResults([]);
+    try {
+      const google = (window as any).google;
+      const { Place } = await google.maps.importLibrary("places");
+      const center = mapRef.current?.getCenter();
+      const { places } = await Place.searchByText({
+        textQuery:`${placeQuery.trim()} 이누야마`,
+        fields:["id","displayName","formattedAddress","location","googleMapsURI"],
+        locationBias:center ? { center, radius:7000 } : undefined,
+        language:"ko",
+        maxResultCount:12
+      });
+      const next:Point[] = places.filter((place:any) => place.location).map((place:any) => ({
+        id:`google-${place.id}`,
+        name:place.displayName || "검색 장소",
+        sub:place.formattedAddress || "Google 지도 장소",
+        category:"검색",
+        lat:place.location.lat(),
+        lng:place.location.lng(),
+        color:"#356fbd",
+        hours:"",
+        description:place.formattedAddress || "Google 지도 검색 결과",
+        tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
+        query:place.googleMapsURI || place.displayName || ""
+      }));
+      setPlaceResults(next);
+    } catch {
+      setRouteError("장소 검색을 사용할 수 없어요. Demo Key의 Places 할당량을 확인해 주세요.");
+    } finally {
+      setPlaceSearching(false);
+    }
   };
 
   const searchHotel = async () => {
@@ -293,8 +378,9 @@ export default function Home() {
 
       <nav className="bottom-tabs">
         <button className={sheet === "places" ? "active" : ""} onClick={() => {setSheet("places");setSheetCollapsed(false);}}><MapPin size={19}/><span>장소</span></button>
+        <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
+        <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
         <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
-        <button className={sheet === "hotel" ? "active" : ""} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}}><Building2 size={19}/><span>내 숙소</span></button>
       </nav>
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
@@ -313,11 +399,59 @@ export default function Home() {
             </div>
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
-              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
+              <button className={`save-action ${savedPlaces.some((item) => item.id === selected.id) ? "saved" : ""}`} onClick={() => toggleSavedPlace(selected)} aria-label="장소 저장">
+                <Heart size={16} fill={savedPlaces.some((item) => item.id === selected.id) ? "currentColor" : "none"}/>
+              </button>
+              <a href={selected.query.startsWith("http") ? selected.query : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
             <div className="spot-strip">
               {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b><small>{spot.sub}</small></button>)}
             </div>
+          </>
+        )}
+
+        {sheet === "search" && (
+          <>
+            <div className="sheet-heading"><div><small>실제 Google 지도 데이터</small><h2>주변 장소 검색</h2></div><Search size={19}/></div>
+            <div className="hotel-search">
+              <Search size={18}/>
+              <input value={placeQuery} onChange={(e)=>setPlaceQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchGooglePlaces()} placeholder="식당, 카페, 관광지 검색"/>
+              <button onClick={searchGooglePlaces}>{placeSearching ? "검색 중" : "검색"}</button>
+            </div>
+            <div className="quick-search">
+              {["가족 식당","카페 디저트","전통거리","아이와 관광지"].map((query) => <button key={query} onClick={() => {setPlaceQuery(query);}}>{query}</button>)}
+            </div>
+            <div className="google-results">
+              {placeResults.map((point) => (
+                <article key={point.id} className="google-result">
+                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});mapRef.current?.setZoom(17);}}>
+                    <MapPin size={17}/><span><b>{point.name}</b><small>{point.sub}</small></span>
+                  </button>
+                  <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
+                  <button className="result-route" onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
+                </article>
+              ))}
+            </div>
+            {!placeSearching && placeResults.length === 0 && <p className="empty-saved">장소명을 검색하거나 지도 위의 상점·명소를 눌러보세요.</p>}
+            {routeError && <p className="route-error">{routeError}</p>}
+          </>
+        )}
+
+        {sheet === "saved" && (
+          <>
+            <div className="sheet-heading"><div><small>이 휴대폰에 보관</small><h2>저장한 장소</h2></div><Heart size={19}/></div>
+            <div className="saved-list">
+              {savedPlaces.map((point) => (
+                <article key={point.id} className="saved-row">
+                  <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});mapRef.current?.setZoom(17);}}>
+                    <span style={{background:point.color}}>{point.name.slice(0,1)}</span><div><b>{point.name}</b><small>{point.sub}</small></div>
+                  </button>
+                  <button onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
+                  <button className="delete-saved" onClick={() => toggleSavedPlace(point)} aria-label="삭제"><Trash2 size={16}/></button>
+                </article>
+              ))}
+            </div>
+            {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
           </>
         )}
 
@@ -346,9 +480,9 @@ export default function Home() {
               <button className={mode==="drive"?"active":""} onClick={()=>setMode("drive")}><Car size={17}/>자동차</button>
             </div>
             <div className="route-selects">
-              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}><option value="station">이누야마역</option>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></label>
+              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}><option value="station">이누야마역</option>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}{savedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
               <div className="route-line"/>
-              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}<option value="station">이누야마역</option>{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></label>
+              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}<option value="station">이누야마역</option>{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}{savedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
             </div>
             <button className="calculate-button" onClick={getRoute} disabled={routeLoading}>{routeLoading ? "경로 계산 중…" : <><Navigation size={18}/> 이동시간 계산하기</>}</button>
             {route && <div className="route-summary"><div><Clock3/><span><small>예상 이동시간</small><b>약 {route.minutes}분</b></span></div><div><Navigation/><span><small>이동거리</small><b>{distanceText(route.distance)}</b></span></div></div>}
