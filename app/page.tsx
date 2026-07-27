@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Building2, Car, Check, ChevronDown, Clock3, Footprints, LocateFixed,
+  Building2, Car, Check, ChevronDown, ChevronUp, Clock3, Footprints, LocateFixed,
   MapPin, Navigation, Search, SlidersHorizontal, X
 } from "lucide-react";
 
@@ -50,6 +50,7 @@ export default function Home() {
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
   const [sheet, setSheet] = useState<"places" | "route" | "hotel">("places");
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -147,6 +148,7 @@ export default function Home() {
       marker.addListener("click", () => {
         setSelected(point);
         setSheet("places");
+        setSheetCollapsed(false);
         mapRef.current.panTo({ lat:point.lat, lng:point.lng });
       });
       markerLayerRef.current.push(marker);
@@ -271,16 +273,16 @@ export default function Home() {
     <main className="mobile-app">
       <header className="mobile-header">
         <div><small>우리 가족 이누야마 여행</small><h1>오늘 어디로 갈까요?</h1></div>
-        <button className="round-button" onClick={() => setSheet("hotel")} aria-label="숙소 등록"><Building2 size={20}/></button>
+        <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
       </header>
 
       <div className="status-row">
-        <button className={`hotel-status ${hotel ? "saved" : ""}`} onClick={() => setSheet("hotel")}>
+          <button className={`hotel-status ${hotel ? "saved" : ""}`} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}}>
           <Building2 size={15}/>
           <span>{hotel ? hotel.name : "숙소를 등록해 주세요"}</span>
           {hotel ? <Check size={15}/> : <ChevronDown size={15}/>}
         </button>
-        <button className="route-shortcut" onClick={() => setSheet("route")}><Navigation size={15}/> 길찾기</button>
+        <button className="route-shortcut" onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={15}/> 길찾기</button>
       </div>
 
       <section className="mobile-map-wrap">
@@ -290,13 +292,15 @@ export default function Home() {
       </section>
 
       <nav className="bottom-tabs">
-        <button className={sheet === "places" ? "active" : ""} onClick={() => setSheet("places")}><MapPin size={19}/><span>장소</span></button>
-        <button className={sheet === "route" ? "active" : ""} onClick={() => setSheet("route")}><Navigation size={19}/><span>길찾기</span></button>
-        <button className={sheet === "hotel" ? "active" : ""} onClick={() => setSheet("hotel")}><Building2 size={19}/><span>내 숙소</span></button>
+        <button className={sheet === "places" ? "active" : ""} onClick={() => {setSheet("places");setSheetCollapsed(false);}}><MapPin size={19}/><span>장소</span></button>
+        <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
+        <button className={sheet === "hotel" ? "active" : ""} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}}><Building2 size={19}/><span>내 숙소</span></button>
       </nav>
 
-      <section className={`bottom-sheet ${sheet}`}>
-        <div className="sheet-handle"/>
+      <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
+        <button className="sheet-toggle" onClick={() => setSheetCollapsed((value) => !value)} aria-label={sheetCollapsed ? "패널 펼치기" : "패널 접기"}>
+          <span className="sheet-handle"/>{sheetCollapsed ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+        </button>
         {sheet === "places" && (
           <>
             <div className="sheet-heading"><div><small>추천 장소</small><h2>{selected.name}</h2></div><SlidersHorizontal size={19}/></div>
