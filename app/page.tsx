@@ -128,6 +128,16 @@ function recommendedMenuFor(name:string, type:string, primaryType?:string) {
 
 function subwayLinesFor(area:string) {
   const key = area.toLowerCase();
+  if (/이누야마|犬山|inuyama/.test(key)) return [
+    {name:"메이테쓰 이누야마선",color:"#e53935",stations:["나고야","가미오타이","이와쿠라","고난","가시와모리","이누야마"]},
+    {name:"메이테쓰 고마키선",color:"#e53935",stations:["가미이다","아지마","고마키","가쿠덴","이누야마"]},
+    {name:"메이테쓰 히로미선",color:"#e53935",stations:["이누야마","도미오카마에","젠지노","신카니","미타케"]},
+    {name:"메이테쓰 가카미가하라선",color:"#e53935",stations:["이누야마유엔","신우누마","미카키노","메이테쓰기후"]}
+  ];
+  if (/도코나메|常滑|tokoname/.test(key)) return [
+    {name:"메이테쓰 도코나메선",color:"#e53935",stations:["메이테쓰나고야","가나야마","진구마에","오타가와","신마이코","도코나메"]},
+    {name:"메이테쓰 공항선",color:"#e53935",stations:["도코나메","린쿠토코나메","주부국제공항"]}
+  ];
   if (/나고야|名古屋|nagoya/.test(key)) return [
     {name:"히가시야마선",color:"#f4b400",stations:["다카바타","나고야","후시미","사카에","모토야마","후지가오카"]},
     {name:"메이조선",color:"#8e44ad",stations:["가나야마","사카에","오조네","모토야마","야고토"]},
@@ -159,6 +169,29 @@ function subwayLinesFor(area:string) {
     {name:"공항선",color:"#e67e22",stations:["후쿠오카공항","하카타","기온","덴진","메이노하마"]},
     {name:"하코자키선",color:"#3498db",stations:["나카스카와바타","하코자키","가이즈카"]},
     {name:"나나쿠마선",color:"#2e8b57",stations:["하카타","야쿠인","롯폰마쓰","하시모토"]}
+  ];
+  if (/요코하마|横浜|yokohama/.test(key)) return [
+    {name:"블루라인",color:"#1687c9",stations:["아자미노","신요코하마","요코하마","사쿠라기초","간나이","쇼난다이"]},
+    {name:"그린라인",color:"#45a735",stations:["히요시","센터키타","센터미나미","나카야마"]},
+    {name:"JR 게이힌도호쿠·네기시선",color:"#23a9e0",stations:["요코하마","사쿠라기초","간나이","이시카와초","오후나"]}
+  ];
+  if (/고베|神戸|kobe/.test(key)) return [
+    {name:"세이신·야마테선",color:"#2e8b57",stations:["신고베","산노미야","겐초마에","신나가타","세이신추오"]},
+    {name:"가이간선",color:"#3498db",stations:["산노미야·하나도케이마에","하버랜드","신나가타"]},
+    {name:"JR 고베선",color:"#1976d2",stations:["오사카","아마가사키","산노미야","고베","아카시"]}
+  ];
+  if (/나라|奈良|nara/.test(key)) return [
+    {name:"긴테쓰 나라선",color:"#d32f2f",stations:["오사카난바","쓰루하시","이코마","야마토사이다이지","긴테쓰나라"]},
+    {name:"JR 야마토지선",color:"#2e8b57",stations:["JR난바","덴노지","오지","호류지","나라"]}
+  ];
+  if (/히로시마|広島|hiroshima/.test(key)) return [
+    {name:"히로덴 1호선",color:"#e53935",stations:["히로시마역","핫초보리","가미야초","시청앞","히로시마항"]},
+    {name:"히로덴 2호선",color:"#f39c12",stations:["히로시마역","핫초보리","원폭돔앞","니시히로시마","미야지마구치"]},
+    {name:"아스트램라인",color:"#2e8b57",stations:["혼도리","겐초마에","신하쿠시마","오마치","고이키코엔마에"]}
+  ];
+  if (/센다이|仙台|sendai/.test(key)) return [
+    {name:"난보쿠선",color:"#2e8b57",stations:["이즈미추오","센다이","이쓰쓰바시","나가마치","도미자와"]},
+    {name:"도자이선",color:"#3498db",stations:["야기야마도부쓰코엔","센다이","렌보","아라이"]}
   ];
   return [];
 }
@@ -207,10 +240,18 @@ export default function Home() {
   const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
+  const isPointInCurrentArea = (point:{lat:number;lng:number}) => {
+    const center = areaPoint || (isInuyamaArea ? station : null);
+    const insideBounds = areaBounds?.contains
+      ? areaBounds.contains({ lat:point.lat, lng:point.lng })
+      : true;
+    const insideRadius = center ? pointDistanceKm(center, point) <= 20 : true;
+    return insideBounds && insideRadius;
+  };
   const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
   const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
-  const regionalSavedPlaces = areaPoint ? savedPlaces.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : savedPlaces;
-  const regionalPlaceResults = areaPoint ? placeResults.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : placeResults;
+  const regionalSavedPlaces = savedPlaces.filter(isPointInCurrentArea);
+  const regionalPlaceResults = placeResults.filter(isPointInCurrentArea);
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -284,6 +325,14 @@ export default function Home() {
           const place = new Place({ id:event.placeId });
           await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"] });
           if (!place.location) return;
+          const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
+          const currentCenter = areaPoint || (isInuyamaArea ? station : null);
+          const isInsideBounds = areaBounds?.contains ? areaBounds.contains(clickedPoint) : true;
+          const isInsideRadius = currentCenter ? pointDistanceKm(currentCenter, clickedPoint) <= 20 : true;
+          if (!isInsideBounds || !isInsideRadius) {
+            setRouteError(`${travelArea} 지역 안의 장소만 선택할 수 있어요.`);
+            return;
+          }
           const details = googlePlaceDetails(place, "지도에서 선택한 장소");
           const point:Point = {
             id:`google-${place.id}`,
@@ -385,7 +434,14 @@ export default function Home() {
         language:"ko",
         maxResultCount:12
       });
-      const next:Point[] = places.filter((place:any) => place.location).map((place:any, index:number) => {
+      const next:Point[] = places.filter((place:any) => {
+        if (!place.location) return false;
+        const point = { lat:place.location.lat(), lng:place.location.lng() };
+        const currentCenter = areaPoint || (isInuyamaArea ? station : null);
+        const insideBounds = areaBounds?.contains ? areaBounds.contains(point) : true;
+        const insideRadius = currentCenter ? pointDistanceKm(currentCenter, point) <= 20 : true;
+        return insideBounds && insideRadius;
+      }).map((place:any, index:number) => {
         const details = googlePlaceDetails(place, `${travelArea || "일본"} 검색 장소 ${index + 1}`);
         return {
         id:`google-${place.id}`,
@@ -488,7 +544,13 @@ export default function Home() {
           language:"ko",
           maxResultCount:5
         });
-        return places.filter((place:any)=>place.location && bounds.contains(place.location)).slice(0,4).map((place:any,index:number) => {
+        return places.filter((place:any)=>{
+          if (!place.location || !bounds.contains(place.location)) return false;
+          return pointDistanceKm(
+            { lat:centerLat, lng:centerLng },
+            { lat:place.location.lat(), lng:place.location.lng() }
+          ) <= 20;
+        }).slice(0,4).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
@@ -717,7 +779,7 @@ export default function Home() {
               {["가족 식당","카페 디저트","전통거리","아이와 관광지"].map((query) => <button key={query} onClick={() => {setPlaceQuery(query);}}>{query}</button>)}
             </div>
             <div className="google-results">
-              {placeResults.map((point) => (
+              {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
                   <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
                     <MapPin size={17}/><span><b>{point.name}</b><small>{point.sub}</small></span>
@@ -727,7 +789,7 @@ export default function Home() {
                 </article>
               ))}
             </div>
-            {!placeSearching && placeResults.length === 0 && <p className="empty-saved">장소명을 검색하거나 지도 위의 상점·명소를 눌러보세요.</p>}
+            {!placeSearching && regionalPlaceResults.length === 0 && <p className="empty-saved">{travelArea} 지역 안에서 장소명을 검색하거나 지도 위의 상점·명소를 눌러보세요.</p>}
             {routeError && <p className="route-error">{routeError}</p>}
           </>
         )}
@@ -803,7 +865,6 @@ export default function Home() {
               <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
               <button onClick={()=>buildAreaGuide()} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
-              <button className="transit-jump" onClick={()=>document.getElementById("guide-transit-map")?.scrollIntoView({behavior:"smooth"})}>교통 노선도 보기</button>
               {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
@@ -852,14 +913,14 @@ export default function Home() {
                   </article>
 
                   <article id="guide-transit-map" className="guide-page guide-transit-page">
-                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 교통 노선도</h2><span>{dateText}</span></div>
-                    <p className="transit-intro">{hasSubwayArea ? "주요 지하철 노선과 환승에 참고할 핵심 역을 별도로 정리했습니다." : "이 지역은 별도의 도시 지하철 노선이 확인되지 않아 철도·버스 이동을 중심으로 확인해 주세요."}</p>
+                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·기차 노선도</h2><span>{dateText}</span></div>
+                    <p className="transit-intro">{hasSubwayArea ? `여행 동선과 관계없이 ${travelArea}에서 이용할 수 있는 주요 도시철도·지하철·기차 노선과 핵심 역을 정리했습니다.` : "등록된 도시철도 노선 정보가 없는 지역입니다. 현지 철도와 버스 노선은 Google 지도에서 확인해 주세요."}</p>
                     {hasSubwayArea ? <div className="subway-diagram">
                       {subwayLines.map((line)=><div className="subway-line" key={line.name}>
                         <b style={{background:line.color}}>{line.name}</b>
                         <div>{line.stations.map((stationName,index)=><span key={stationName}><i style={{borderColor:line.color}}/>{stationName}{index<line.stations.length-1&&<small>—</small>}</span>)}</div>
                       </div>)}
-                    </div> : <div className="no-subway"><Navigation size={30}/><b>도시 지하철 노선 없음</b><span>Google 지도에서 지역 철도와 버스 노선을 확인해 주세요.</span></div>}
+                    </div> : <div className="no-subway"><Navigation size={30}/><b>등록된 교통 노선도 없음</b><span>Google 지도에서 지역 철도와 버스 노선을 확인해 주세요.</span></div>}
                     <div className="transit-tips"><b>교통 이용 팁</b><span>교통카드를 사용하면 환승과 결제가 편리해요.</span><span>아이와 할머니가 함께 이동할 때는 엘리베이터 출구를 먼저 확인하세요.</span><span>정확한 막차와 운행 변경 정보는 방문 당일 확인해 주세요.</span></div>
                   </article>
 
