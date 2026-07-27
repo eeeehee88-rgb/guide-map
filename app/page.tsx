@@ -1904,113 +1904,71 @@ export default function Home() {
                 const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} ${travelCountry==="KR"?"대한민국":"일본"}`;
                 const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
-                const renderGuideGroups = (groups:string[]) => groups.map((group) => {
-                  const items = guidePlaces.filter((point)=>guideGroup(point)===group).slice(0,8);
-                  if (!items.length) return null;
-                  const actionTitle=["맛집","카페","디저트"].includes(group)
-                    ? "꼭 먹어볼 것"
-                    : ["쇼핑","편의점","소품샵","전통시장"].includes(group)
-                      ? "여기서 살 것"
-                      : group==="주류"
-                        ? "추천 주류·가격"
-                        : group==="이자카야·술집"
-                          ? "주문할 메뉴·술"
-                          : "여기서 할 일";
-                  return <section className="guide-group" key={group} style={{"--group-color":categoryColors[group as Category]} as React.CSSProperties}>
-                    <h3><span>{group}</span><small>{items.length}곳 추천</small></h3>
-                    <div>{items.map((point,index)=><article key={point.id} style={{borderTop:`3px solid ${pointColor(point)}`}}>
-                      {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
-                      <header><span>{index+1}</span><div><b>{point.name}</b>{point.originalName&&<i>{point.originalName}</i>}</div></header>
-                      <small>🕒 {point.hours || "방문 전 운영시간 확인"}</small>
-                      <p>{point.aiReason || point.description}</p>
-                      <div className="guide-action-box">
-                        <strong>{actionTitle}</strong>
-                        {point.aiRecommendedItems?.length
-                          ? point.aiRecommendedItems.slice(0,3).map((item,itemIndex)=><em key={`${point.id}-item-${itemIndex}`}><span>{item.name}</span><b>{item.price}</b></em>)
-                          : <em><span>{point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 대표 항목은 방문 전 확인"}</span><b>{point.aiPrice || priceGuideFor(point.placeType || group,travelCountry)}</b></em>}
-                      </div>
-                      <div className="guide-visit-meta">
-                        <span>💰 {point.aiPrice || priceGuideFor(point.placeType || group,travelCountry)}</span>
-                        {point.aiBestTime&&<span>🕒 {point.aiBestTime}</span>}
-                      </div>
-                      {(point.aiVisitTip||point.aiFamilyTip||point.aiParkingTip)&&<footer>
-                        {point.aiVisitTip&&<span>방문 팁 · {point.aiVisitTip}</span>}
-                        {point.aiFamilyTip&&<span>가족 팁 · {point.aiFamilyTip}</span>}
-                        {point.aiParkingTip&&<span>이동·주차 · {point.aiParkingTip}</span>}
-                      </footer>}
-                    </article>)}</div>
-                  </section>;
-                });
+                const attractions=guidePlaces.filter((point)=>["관광","역사","아이와 함께"].includes(guideGroup(point))).slice(0,12);
+                const foodPlaces=guidePlaces.filter((point)=>["맛집","카페","디저트"].includes(guideGroup(point))).slice(0,9);
+                const shoppingPlaces=guidePlaces.filter((point)=>["쇼핑","편의점","소품샵","전통시장"].includes(guideGroup(point))).slice(0,10);
+                const drinkPlaces=guidePlaces.filter((point)=>["주류","이자카야·술집","온천·휴식"].includes(guideGroup(point))).slice(0,8);
+                const routePlaces=aiGuidePlan.days.flatMap((day)=>day.stops)
+                  .map((stop)=>guidePlaces.find((point)=>point.id===stop.id)).filter(Boolean).slice(0,7) as Point[];
+                const nearbyPlaces=[...foodPlaces,...attractions,...shoppingPlaces]
+                  .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index).slice(0,10);
+                const nearbyMarkers=nearbyPlaces.map((point,index)=>
+                  `&markers=${encodeURIComponent(`color:0x${pointColor(point).replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
+                ).join("");
+                const nearbyMapUrl=mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=11&size=640x520&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${nearbyMarkers}&key=${encodeURIComponent(mapsKey)}` : "";
+                const itemLine=(point:Point)=>
+                  point.aiRecommendedItems?.slice(0,2).map((item)=>`${item.name} ${item.price}`).join(" · ")
+                  || point.aiFamousItems?.slice(0,2).join(" · ")
+                  || point.recommendedMenu
+                  || `${guideGroup(point)} 대표 항목은 방문 전 확인`;
+                const compactCard=(point:Point,index:number,kind:"food"|"spot"|"shop"="spot")=><article className={`atlas-card atlas-${kind}-card`} key={point.id}>
+                  <header><span style={{background:pointColor(point)}}>{index+1}</span><div><b>{point.name}</b>{point.originalName&&<small>{point.originalName}</small>}</div></header>
+                  {point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
+                  <p>{point.aiReason||point.description}</p>
+                  <strong>{kind==="food"?"추천 메뉴":kind==="shop"?"추천 상품":"여기서 할 일"} · {itemLine(point)}</strong>
+                  <footer><span>◷ {point.hours||"운영시간 확인"}</span><b>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</b></footer>
+                </article>;
                 return <>
-                  <article className="guide-page guide-cover">
-                    <span className="guide-volume-badge">1/5</span>
-                    <div className="guide-title"><div><small>AI FAMILY TRAVEL GUIDE</small><h2>{aiGuidePlan.title || `${travelArea} 여행 지도`}</h2><p>{aiGuidePlan.overview}</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
-                    <div className="guide-map-board">
-                      {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
+                  <article className="guide-page atlas-page atlas-map-page">
+                    <header className="atlas-title"><span>1/3</span><div><h2>{travelArea} 지도</h2><p>{hotel?`${hotel.name} 출발 가이드`:"지역 중심 출발 가이드"}</p></div><time>{dateText}</time></header>
+                    <div className="atlas-map-layout">
+                      <aside className="atlas-left-rail">
+                        <section><h3>🚆 가는 방법</h3><b>{hotel?.name||`${travelArea} 중심`} → 주요 관광지</b><p>대중교통·도보·렌터카를 가족 컨디션에 맞춰 선택하세요.</p></section>
+                        <section><h3>범례</h3>{["관광","맛집","카페","쇼핑","주류","교통"].map((group)=><p key={group}><i style={{background:categoryColors[group as Category]}}/>{group}</p>)}</section>
+                        <section><h3>{travelArea} 한눈에 보기</h3><p>{aiGuidePlan.overview}</p></section>
+                        <section><h3>여행 정보</h3><p>화폐 · {travelCountry==="KR"?"대한민국 원(₩)":"일본 엔(¥)"}</p><p>일정 · {tripDays?`${tripDays.nights}박 ${tripDays.days}일`:"당일"}</p><p>구성 · {travelers.map((item)=>item.relation).join(" · ")}</p></section>
+                      </aside>
+                      <section className="atlas-main-map">{staticMapUrl?<img src={staticMapUrl} alt={`${travelArea} 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div className="atlas-map-caption"><b>{travelArea} 추천 지도</b><span>{mapPlaces.length}개 장소를 번호로 표시했습니다.</span></div></section>
+                      <aside className="atlas-map-spots">{attractions.slice(0,7).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p><small>{point.aiBestTime||point.hours||"방문시간 확인"}</small></div></article>)}</aside>
                     </div>
-                    <div className="guide-quick-facts">
-                      <div><small>여행 구성</small><b>{travelers.map((item)=>item.age?`${item.relation} ${item.age}세`:item.relation).join(" · ")}</b></div>
-                      <div><small>일정</small><b>{tripDays?`${tripDays.nights}박 ${tripDays.days}일`:"당일 여행"}</b></div>
-                      <div><small>가이드 범위</small><b>{mapPlaces.length}곳 · {new Set(mapPlaces.map(guideGroup)).size}개 테마</b></div>
-                    </div>
-                    <div className="guide-index">
-                      {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:pointColor(point)}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
-                    </div>
+                    <footer className="atlas-tip-row"><b>알아두면 좋은 TIP</b>{aiGuidePlan.familyTips?.slice(0,3).map((tip,index)=><span key={index}>✓ {tip}</span>)}</footer>
                   </article>
 
-                  <article className="guide-page ai-itinerary-page">
-                    <span className="guide-volume-badge">2/5</span>
-                    <div className="guide-page-title"><small>AI PERSONALIZED ITINERARY</small><h2>우리 가족 맞춤 일정</h2><span>{dateText}</span></div>
-                    <div className="ai-day-list">
-                      {aiGuidePlan.days.map((day)=><section key={day.day}><h3><span>DAY {day.day}</span>{day.title}</h3><div>{day.stops.map((stop,index)=>{
-                        const point=guidePlaces.find((item)=>item.id===stop.id);
-                        return <article key={`${day.day}-${stop.id}-${index}`}>
-                          <time>{stop.time}</time>
-                          {point?.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
-                          <div><b>{point?.name||"추천 장소"}</b>{point&&<small>{guideGroup(point)} · {point.aiPrice||point.googlePriceRange||"가격 현장 확인"}</small>}<p>{stop.reason}</p></div>
-                        </article>;
-                      })}</div>{day.tips?.length>0&&<footer>{day.tips.join(" · ")}</footer>}</section>)}
+                  <article className="guide-page atlas-page atlas-course-page">
+                    <header className="atlas-title"><span>2/3</span><div><h2>{travelArea} 추천 동선 & 맛집 & 쇼핑 가이드</h2><p>꼭 가봐야 할 장소와 꼭 먹고 사야 할 항목</p></div><time>{dateText}</time></header>
+                    <section className="atlas-route"><h3>추천 하루 코스</h3><div>{routePlaces.map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><b>{point.name}</b><small>{index===routePlaces.length-1?"도착":"약 10~20분 이동"}</small></article>)}</div></section>
+                    <div className="atlas-course-layout">
+                      <main>
+                        <h3 className="atlas-section-title food">꼭 가봐야 할 맛집 & 카페</h3>
+                        <div className="atlas-food-grid">{foodPlaces.slice(0,6).map((point,index)=>compactCard(point,index,"food"))}</div>
+                        <h3 className="atlas-section-title shop">쇼핑·기념품·주류 리스트</h3>
+                        <div className="atlas-buy-grid">{[...shoppingPlaces.slice(0,5),...drinkPlaces.slice(0,3)].map((point,index)=>compactCard(point,index,"shop"))}</div>
+                      </main>
+                      <aside><h3>주요 스팟 한눈에 보기</h3>{attractions.slice(0,10).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p></div></article>)}</aside>
                     </div>
-                    <div className="ai-guide-tips"><div><b>가족 여행 팁</b><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><b>날씨 대체안</b><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></div>
+                    <footer className="atlas-tip-row"><b>여행 TIP</b><span>맛집은 혼잡 시간 전 방문</span><span>쇼핑은 면세·결제 가능 여부 확인</span><span>주류는 수하물 규정을 확인</span></footer>
                   </article>
 
-                  <article className="guide-page guide-sightseeing-page guide-book-page">
-                    <span className="guide-volume-badge">3/5</span>
-                    <div className="guide-page-title"><small>LOCAL SIGHTSEEING GUIDE</small><h2>{travelArea || "일본"} 관광·체험 가이드</h2><span>{dateText}</span></div>
-                    <p className="guide-chapter-intro">지역 대표 명소에서 무엇을 보고, 어떤 체험을 하고, 어느 시간에 방문하면 좋은지 정리했습니다.</p>
-                    <div className="route-ribbon">
-                      {hotel && <div><Building2/><b>{hotel.name}</b></div>}
-                      {guidePlaces.slice(0,6).map((point,index)=><div key={point.id}><span>{index+1}</span><b>{point.name}</b></div>)}
+                  <article className="guide-page atlas-page atlas-nearby-page">
+                    <header className="atlas-title"><span>3/3</span><div><h2>{travelArea} 근교 지도 & 식당·카페 가이드</h2><p>렌터카와 대중교통으로 넓혀 보는 주변 추천</p></div><time>{dateText}</time></header>
+                    <div className="atlas-nearby-layout">
+                      <section className="atlas-nearby-map">{nearbyMapUrl?<img src={nearbyMapUrl} alt={`${travelArea} 근교 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div>{nearbyPlaces.map((point,index)=><p key={point.id}><span style={{background:pointColor(point)}}>{index+1}</span><b>{point.name}</b><small>{guideGroup(point)}</small></p>)}</div></section>
+                      <aside>
+                        <h3 className="atlas-section-title food">근교 식당·카페 추천</h3>
+                        {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
+                      </aside>
                     </div>
-                    {renderGuideGroups(["관광","역사","아이와 함께"])}
-                  </article>
-
-                  <article id="guide-transit-map" className="guide-page guide-transit-page">
-                    <span className="guide-volume-badge">교통 부록</span>
-                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·기차 노선도</h2><span>{dateText}</span></div>
-                    <p className="transit-intro">{hasSubwayArea ? `여행 동선과 관계없이 ${travelArea}에서 이용할 수 있는 주요 도시철도·지하철·기차 노선과 핵심 역을 정리했습니다.` : "등록된 도시철도 노선 정보가 없는 지역입니다. 현지 철도와 버스 노선은 Google 지도에서 확인해 주세요."}</p>
-                    {hasSubwayArea ? <div className="subway-diagram">
-                      {subwayLines.map((line)=><div className="subway-line" key={line.name}>
-                        <b style={{background:line.color}}>{line.name}</b>
-                        <div>{line.stations.map((stationName,index)=><span key={stationName}><i style={{borderColor:line.color}}/>{stationName}{index<line.stations.length-1&&<small>—</small>}</span>)}</div>
-                      </div>)}
-                    </div> : <div className="no-subway"><Navigation size={30}/><b>등록된 교통 노선도 없음</b><span>Google 지도에서 지역 철도와 버스 노선을 확인해 주세요.</span></div>}
-                    <div className="transit-tips"><b>교통 이용 팁</b><span>교통카드를 사용하면 환승과 결제가 편리해요.</span><span>아이와 할머니가 함께 이동할 때는 엘리베이터 출구를 먼저 확인하세요.</span><span>정확한 막차와 운행 변경 정보는 방문 당일 확인해 주세요.</span></div>
-                  </article>
-
-                  <article className="guide-page guide-food-page guide-book-page">
-                    <span className="guide-volume-badge">4/5</span>
-                    <div className="guide-page-title"><small>LOCAL FOOD GUIDE</small><h2>{travelArea || "일본"} 현지인 맛집</h2><span>{dateText}</span></div>
-                    <p className="guide-chapter-intro">가족과 함께 방문하기 좋은 현지 식당, 카페, 디저트와 대표 메뉴·예상 가격을 모았습니다.</p>
-                    {renderGuideGroups(["맛집","카페","디저트"])}
-                  </article>
-
-                  <article className="guide-page guide-shopping-page guide-book-page">
-                    <span className="guide-volume-badge">5/5</span>
-                    <div className="guide-page-title"><small>SHOPPING, SAKE & NIGHT GUIDE</small><h2>{travelArea || "일본"} 쇼핑·주류 가이드</h2><span>{dateText}</span></div>
-                    <p className="guide-chapter-intro">어느 매장에 가서 무엇을 사야 하는지, 지역 주류는 무엇을 고르고 어느 정도 가격인지 한 번에 확인하세요.</p>
-                    {renderGuideGroups(["쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집","온천·휴식"])}
-                    <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
+                    <section className="atlas-bottom-info"><div><h3>추천 이동 방법</h3><p>🚗 렌터카 · 주차와 이동시간 확인</p><p>🚌 대중교통 · 환승과 막차 확인</p></div><div><h3>알아두면 좋은 팁</h3><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><h3>비 오는 날</h3><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></section>
                   </article>
                 </>;
               })()}
