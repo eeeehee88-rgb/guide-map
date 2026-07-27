@@ -50,6 +50,11 @@ const station: Point = {
 };
 
 const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"];
+const categoryColors: Record<Category,string> = {
+  "전체":"#247565","관광":"#275fbd","맛집":"#ef6a4c","카페":"#c56892","디저트":"#d36a9a",
+  "쇼핑":"#e54473","전통시장":"#d88b24","주류":"#8052a5","이자카야·술집":"#a65068",
+  "온천·휴식":"#6b55b5","아이와 함께":"#2e9b78","역사":"#247565"
+};
 
 function distanceText(km: number) {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
@@ -271,6 +276,10 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
+  const aiCacheKey = () => `ai-trip-guide:${JSON.stringify({
+    area:travelArea.trim(),start:guideStart,end:guideEnd,
+    travelers:travelers.map(({relation,age})=>[relation,age])
+  })}`;
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
@@ -610,6 +619,17 @@ export default function Home() {
       setSelected(nextAreaPoint);
       setOriginId("area-center");
       localStorage.setItem("travel-search-area", travelArea.trim());
+      try {
+        const cached = JSON.parse(localStorage.getItem(aiCacheKey()) || "null");
+        if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
+          setAiOverview(cached.overview || "");
+          setGuideRecommendations(cached.recommendations);
+          setAiGuidePlan(cached.guide || null);
+          setSelected(cached.recommendations[0]);
+          setDestinationId(cached.recommendations[0].id);
+          return cached.recommendations as Point[];
+        }
+      } catch {}
       const { Place } = await google.maps.importLibrary("places");
       const types = [
         { label:"관광", query:"대표 관광지 명소", color:"#275fbd" },
@@ -629,7 +649,7 @@ export default function Home() {
           fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
           locationRestriction:bounds,
           language:"ko",
-          maxResultCount:5
+          maxResultCount:4
         });
         return places.filter((place:any)=>{
           if (!place.location || !bounds.contains(place.location)) return false;
@@ -637,7 +657,7 @@ export default function Home() {
             { lat:centerLat, lng:centerLng },
             { lat:place.location.lat(), lng:place.location.lng() }
           ) <= 20;
-        }).slice(0,4).map((place:any,index:number) => {
+        }).slice(0,3).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
@@ -668,8 +688,7 @@ export default function Home() {
           },
           candidates:candidates.map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
-            address:point.sub,rating:point.rating,reviewCount:point.reviewCount,
-            description:point.description,recommendedMenu:point.recommendedMenu
+            rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu
           }))
         })
       });
@@ -695,6 +714,14 @@ export default function Home() {
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
+      const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
+      setAiGuidePlan(preparedGuide);
+      try {
+        localStorage.setItem(aiCacheKey(),JSON.stringify({
+          createdAt:Date.now(),overview:aiData.result.overview || "",
+          recommendations:next,guide:preparedGuide
+        }));
+      } catch {}
       setSelected(next[0]);
       setDestinationId(next[0].id);
       routeLayerRef.current?.setMap(null);
@@ -964,6 +991,7 @@ export default function Home() {
     }
     const profile:TripProfile = {travelers,startDate:guideStart,endDate:guideEnd};
     localStorage.setItem("family-trip-profile",JSON.stringify(profile));
+    setAiGuidePlan(null);
     setTripSaved(true);
     setRouteError("");
     setSheet("places");
@@ -973,6 +1001,10 @@ export default function Home() {
 
   const openAiGuidebook = async () => {
     setGuideOpen(true);
+    if (aiGuidePlan?.days?.length) {
+      setAiGuideLoading(false);
+      return;
+    }
     setAiGuideLoading(true);
     setRouteError("");
     try {
@@ -1044,7 +1076,7 @@ export default function Home() {
           <>
             <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2>{selected.originalName && <span className="original-name">{selected.originalName}</span>}</div></div>
             <div className="category-scroll">
-              {categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
+              {categories.map((item) => <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
             </div>
             <div className="selected-place">
               <span className="place-dot" style={{background:selected.color}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>

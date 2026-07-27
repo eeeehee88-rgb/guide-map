@@ -2,7 +2,7 @@ export async function POST(request:Request) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) return Response.json({error:"AI 설정이 필요해요."},{status:503});
   const body = await request.json().catch(()=>null);
-  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0,45) : [];
+  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0,30) : [];
   if (!body?.trip || !candidates.length) return Response.json({error:"여행 정보와 장소 후보가 필요해요."},{status:400});
 
   const response = await fetch("https://api.deepseek.com/chat/completions",{
@@ -11,10 +11,10 @@ export async function POST(request:Request) {
     body:JSON.stringify({
       model:"deepseek-v4-flash",
       response_format:{type:"json_object"},
-      temperature:0.25,
-      max_tokens:5000,
+      temperature:0.2,
+      max_tokens:3400,
       messages:[
-        {role:"system",content:`너는 일본 가족여행 추천 기획자다. 제공된 Google 장소 후보만 사용해 여행 구성원과 일정에 맞는 장소를 선정하고 한국어 JSON으로 답한다. 존재하지 않는 장소를 추가하지 않는다. 메뉴·상품·가격이 후보 정보로 확인되지 않으면 "방문 전 확인"이라고 쓴다. 결과는 {"overview":"...","recommendations":[{"id":"후보 id","reason":"가족 맞춤 추천 이유","famousItems":["대표 메뉴/상품/볼거리"],"priceGuide":"가격대 또는 확인 필요","familyTip":"아이·고령자 포함 방문 팁","bestTime":"추천 시간대","priority":1}]} 형식이다. 카테고리를 다양하게 유지하고 최대 24곳을 추천한다.`},
+        {role:"system",content:`너는 일본 가족여행 추천 기획자다. 제공된 Google 장소 후보만 사용해 여행 구성원과 일정에 맞는 장소를 선정하고 한국어 JSON으로 답한다. 존재하지 않는 장소를 추가하지 않는다. 메뉴·상품·가격이 확인되지 않으면 "방문 전 확인"이라고 쓴다. 최대 16곳을 카테고리별로 다양하게 선정하고, 선택한 id만 이용해 무리 없는 일정을 함께 만든다. JSON 형식은 {"overview":"한 문장","recommendations":[{"id":"후보 id","reason":"짧은 추천 이유","famousItems":["대표 메뉴/상품/볼거리 최대 2개"],"priceGuide":"짧은 가격대","familyTip":"짧은 가족 팁","bestTime":"추천 시간","priority":1}],"guide":{"title":"...","overview":"...","days":[{"day":1,"title":"...","stops":[{"id":"선택한 장소 id","time":"09:30","reason":"짧은 방문 포인트"}],"tips":["짧은 팁"]}],"familyTips":["최대 3개"],"weatherBackup":["최대 3개"]}}다. 하루 장소는 3~5곳으로 제한한다.`},
         {role:"user",content:JSON.stringify({trip:body.trip,candidates})}
       ]
     })
