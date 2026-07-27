@@ -7,13 +7,14 @@ import {
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
-type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사";
+type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사" | "숙박" | "교통";
 type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
   originalName?: string; originalAddress?: string;
   aiReason?: string; aiPrice?: string; aiFamousItems?: string[]; aiFamilyTip?: string; aiBestTime?: string;
+  aiEvidence?: string; googlePriceRange?: string; googlePriceLevel?: string; reviewHighlights?: string[];
   photoUrl?: string;
   recommendedMenu?: string;
 };
@@ -49,11 +50,11 @@ const station: Point = {
   lat:35.3802772, lng:136.9457636, color:"#3f6bb1", hours:"", description:"여행의 기본 출발점", tip:"", query:"犬山駅"
 };
 
-const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"];
+const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"];
 const categoryColors: Record<Category,string> = {
   "전체":"#247565","관광":"#275fbd","맛집":"#ef6a4c","카페":"#c56892","디저트":"#d36a9a",
   "쇼핑":"#e54473","전통시장":"#d88b24","주류":"#8052a5","이자카야·술집":"#a65068",
-  "온천·휴식":"#6b55b5","아이와 함께":"#2e9b78","역사":"#247565"
+  "온천·휴식":"#6b55b5","아이와 함께":"#2e9b78","역사":"#247565","숙박":"#7a5caf","교통":"#3f6bb1"
 };
 
 function distanceText(km: number) {
@@ -115,12 +116,23 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
   const localizedName = koreanPlaceText(rawName, "");
   const koreanName = localizedName || rawName || fallbackName;
+  const googlePriceRange = place.priceRange?.startPrice
+    ? `${place.priceRange.startPrice.toString()}${place.priceRange.endPrice ? ` ~ ${place.priceRange.endPrice.toString()}` : " 이상"}`
+    : undefined;
+  const priceLabels:Record<string,string> = {
+    FREE:"무료",INEXPENSIVE:"저렴한 편",MODERATE:"보통 가격대",EXPENSIVE:"가격대 높음",VERY_EXPENSIVE:"고가"
+  };
+  const googlePriceLevel = place.priceLevel ? priceLabels[String(place.priceLevel).toUpperCase()] || String(place.priceLevel) : undefined;
+  const reviewHighlights = Array.isArray(place.reviews)
+    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,3)
+    : [];
   return {
     name:koreanName,
     originalName:rawName && rawName !== koreanName ? rawName : undefined,
     originalAddress:rawAddress && rawAddress !== address ? rawAddress : undefined,
     address, placeType, rating, reviewCount, hours, description,
-    businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined
+    businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined,
+    googlePriceRange,googlePriceLevel,reviewHighlights
   };
 }
 
@@ -132,8 +144,10 @@ function guideGroup(point:Point) {
   if (/카페|커피|디저트|제과|베이커리/.test(type)) return "카페";
   if (/쇼핑|백화점|상점|시장|편의점|마트|슈퍼|약국|드럭스토어/.test(type)) return "쇼핑";
   if (/주류|술|사케|와인/.test(type)) return "주류";
-  if (/이자카야|바 |술집|펍/.test(type)) return "이자카야·술집";
+  if (/이자카야|바$|나이트클럽|술집|펍/.test(type)) return "이자카야·술집";
   if (/온천|스파|목욕/.test(type)) return "온천·휴식";
+  if (/호텔|숙박|료칸|리조트|여관|게스트하우스/.test(type)) return "숙박";
+  if (/역$|기차역|지하철역|버스 정류장|공항|터미널|주차장/.test(type)) return "교통";
   return "관광";
 }
 
@@ -167,6 +181,8 @@ function priceGuideFor(type:string) {
   if (type === "주류") return "약 ¥800~3,000 / 상품";
   if (type === "쇼핑" || type === "전통시장") return "상품별 가격 상이";
   if (type === "온천·휴식") return "약 ¥800~2,500 / 1인";
+  if (type === "숙박") return "객실 유형과 날짜에 따라 상이";
+  if (type === "교통") return "이용 구간에 따라 상이";
   return "입장료는 방문 전 확인";
 }
 
@@ -296,7 +312,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide-v4:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v5:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -431,7 +447,7 @@ export default function Home() {
         try {
           const { Place } = await google.maps.importLibrary("places");
           const place = new Place({ id:event.placeId });
-          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"] });
+          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","priceLevel","priceRange","reviews","editorialSummary"] });
           if (!place.location) return;
           const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
           const currentCenter = areaPoint || (isInuyamaArea ? station : null);
@@ -456,6 +472,7 @@ export default function Home() {
             query:place.googleMapsURI || place.displayName || ""
             ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress
+            ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
           };
           setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
           setSelected(point);
@@ -581,7 +598,7 @@ export default function Home() {
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
         textQuery:`${query} ${travelArea.trim() || "일본"}`,
-        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"],
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","priceLevel","priceRange","reviews","editorialSummary"],
         ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
         maxResultCount:12
@@ -609,6 +626,7 @@ export default function Home() {
         query:place.googleMapsURI || place.displayName || ""
         ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
         originalName:details.originalName, originalAddress:details.originalAddress
+        ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
       }});
       setPlaceResults(next);
       if (next[0]) setSelected(next[0]);
@@ -717,7 +735,7 @@ export default function Home() {
       const batches = await Promise.allSettled(types.map(async (type) => {
         const { places } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
-          fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
+          fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange","reviews","editorialSummary"],
           locationRestriction:bounds,
           language:"ko",
           maxResultCount:4
@@ -740,6 +758,7 @@ export default function Home() {
             placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
             businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress,
+            googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights,
             photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
             recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName)
           };
@@ -755,7 +774,7 @@ export default function Home() {
         color:pointColor(point),
         aiReason:point.tip,
         aiFamousItems:point.recommendedMenu ? [point.recommendedMenu] : [],
-        aiPrice:priceGuideFor(point.placeType || guideGroup(point)),
+        aiPrice:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point)),
         aiFamilyTip:point.tip
       }));
       setGuideRecommendations(fallbackPoints);
@@ -772,7 +791,9 @@ export default function Home() {
           },
           candidates:candidates.map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
-            rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu
+            rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
+            googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
+            reviewHighlights:point.reviewHighlights
           }))
         })
       });
@@ -792,10 +813,11 @@ export default function Home() {
           originalName:point.originalName || (localizedName!==point.name ? point.name : undefined),
           color:pointColor(point),
           aiReason:ai.reason,
-          aiPrice:ai.priceGuide || priceGuideFor(point.placeType || guideGroup(point)),
+          aiPrice:point.googlePriceRange || ai.priceGuide || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point)),
           aiFamousItems:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems : point.recommendedMenu ? [point.recommendedMenu] : [],
           aiFamilyTip:ai.familyTip,
           aiBestTime:ai.bestTime,
+          aiEvidence:ai.evidence,
           tip:ai.familyTip || point.tip,
           recommendedMenu:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems.join(" · ") : point.recommendedMenu
         };
@@ -1209,11 +1231,13 @@ export default function Home() {
                   {selected.originalAddress && <small className="original-address">{selected.originalAddress}</small>}
                 </div>
                 {selected.category === "검색" && <div className="place-meta">
+                  <span style={{background:pointColor(selected),color:"#fff",borderColor:pointColor(selected)}}>{guideGroup(selected)}</span>
                   {selected.placeType && <span>{selected.placeType}</span>}
                   {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
                   {selected.businessStatus && <span>{selected.businessStatus}</span>}
                 </div>}
                 <p>{selected.description}</p>
+                {(selected.googlePriceRange||selected.googlePriceLevel)&&<p className="place-price">Google 가격 정보 · {selected.googlePriceRange || selected.googlePriceLevel}</p>}
                 {selected.hours && <p className="place-hours"><Clock3 size={13}/>{selected.hours}</p>}
                 {selected.tip && <div className="family-tip">{selected.category === "검색" ? "방문 팁" : "가족 추천"} · {selected.tip}</div>}
               </div>
@@ -1233,6 +1257,7 @@ export default function Home() {
                 <div><small>예상 가격</small><p>{selected.aiPrice || "방문 전 확인"}</p></div>
                 <div><small>가족 방문 팁</small><p>{selected.aiFamilyTip || "방문 전 확인"}</p></div>
               </div>
+              {selected.aiEvidence&&<p className="ai-evidence">정보 근거 · {selected.aiEvidence}</p>}
               <small className="ai-disclaimer">AI가 Google 장소 후보와 등록한 여행 구성으로 만든 추천 정보예요. 가격·메뉴·영업시간은 방문 전에 확인해 주세요.</small>
             </div>}
             <div className="spot-strip">
@@ -1484,7 +1509,7 @@ export default function Home() {
 
                   <article className="guide-page guide-food-page">
                     <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
-                    {["관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"].map((group) => {
+                    {["관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"].map((group) => {
                       const items = guidePlaces.filter((point)=>guideGroup(point)===group);
                       if (!items.length) return null;
                       return <section className="guide-group" key={group} style={{"--group-color":categoryColors[group as Category]} as React.CSSProperties}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id} style={{borderTop:`3px solid ${pointColor(point)}`}}>
