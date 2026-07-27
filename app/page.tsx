@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Building2, Car, Check, ChevronDown, ChevronUp, Clock3, Footprints, LocateFixed,
+  Building2, Car, ChevronDown, ChevronUp, Clock3, Footprints, LocateFixed,
   Heart, MapPin, Navigation, Search, SlidersHorizontal, Trash2, X
 } from "lucide-react";
 
@@ -39,6 +39,37 @@ const categories: Category[] = ["전체", "맛집", "카페", "역사"];
 
 function distanceText(km: number) {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
+}
+
+const placeTranslations: [string, string][] = [
+  ["犬山城下町", "이누야마 성하마을"], ["犬山城", "이누야마성"], ["犬山駅", "이누야마역"],
+  ["三光稲荷神社", "산코 이나리 신사"], ["針綱神社", "하리쓰나 신사"], ["成田山名古屋別院大聖寺", "나리타산 나고야 별원 다이쇼지"],
+  ["どんでん館", "돈덴칸"], ["からくりミュージアム", "가라쿠리 뮤지엄"], ["木曽川", "기소강"],
+  ["本町茶寮", "혼마치 사료"], ["松野屋", "마쓰노야"], ["キリン亭", "키린테이"],
+  ["ハチカフェ", "하치카페"], ["壽俵屋", "주효야"], ["犬山市文化史料館", "이누야마시 문화사료관"],
+  ["犬山市", "이누야마시"], ["愛知県", "아이치현"], ["日本", "일본"], ["名古屋", "나고야"],
+  ["神社", "신사"], ["寺", "사찰"], ["城", "성"], ["駅", "역"], ["公園", "공원"],
+  ["博物館", "박물관"], ["資料館", "자료관"], ["美術館", "미술관"], ["店", "점"], ["本店", "본점"],
+  ["カフェ", "카페"], ["ホテル", "호텔"], ["レストラン", "레스토랑"], ["ミュージアム", "뮤지엄"]
+];
+
+function koreanPlaceText(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  let translated = value;
+  placeTranslations.forEach(([japanese, korean]) => { translated = translated.replaceAll(japanese, korean); });
+  translated = translated
+    .replace(/〒\s*\d{3}-\d{4}/g, "")
+    .replace(/[都道府県郡区町村丁目番地号]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(translated) ? fallback : translated || fallback;
+}
+
+function localizePoint(point: Point, fallback = "저장한 현지 장소"): Point {
+  if (point.category !== "검색") return point;
+  const name = koreanPlaceText(point.name, fallback);
+  const address = koreanPlaceText(point.sub, "일본 아이치현 이누야마시");
+  return { ...point, name, sub:address, description:address };
 }
 
 export default function Home() {
@@ -85,7 +116,11 @@ export default function Home() {
     }
     const savedList = localStorage.getItem("inuyama-saved-places");
     if (savedList) {
-      try { setSavedPlaces(JSON.parse(savedList)); } catch {}
+      try {
+        const localized = JSON.parse(savedList).map((point:Point, index:number) => localizePoint(point, `저장한 현지 장소 ${index + 1}`));
+        setSavedPlaces(localized);
+        localStorage.setItem("inuyama-saved-places", JSON.stringify(localized));
+      } catch {}
     }
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
@@ -137,16 +172,17 @@ export default function Home() {
           const place = new Place({ id:event.placeId });
           await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI"] });
           if (!place.location) return;
+          const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
           const point:Point = {
             id:`google-${place.id}`,
-            name:place.displayName || "지도에서 선택한 장소",
-            sub:place.formattedAddress || "Google 지도 장소",
+            name:koreanPlaceText(place.displayName, "지도에서 선택한 장소"),
+            sub:address,
             category:"검색",
             lat:place.location.lat(),
             lng:place.location.lng(),
             color:"#356fbd",
             hours:"",
-            description:place.formattedAddress || "Google 지도에서 선택한 장소",
+            description:address,
             tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
             query:place.googleMapsURI || place.displayName || ""
           };
@@ -224,6 +260,7 @@ export default function Home() {
     if (!placeQuery.trim()) return;
     setPlaceSearching(true);
     setPlaceResults([]);
+    const preservedZoom = mapRef.current?.getZoom();
     try {
       const google = (window as any).google;
       const { Place } = await google.maps.importLibrary("places");
@@ -235,23 +272,26 @@ export default function Home() {
         language:"ko",
         maxResultCount:12
       });
-      const next:Point[] = places.filter((place:any) => place.location).map((place:any) => ({
+      const next:Point[] = places.filter((place:any) => place.location).map((place:any, index:number) => {
+        const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
+        return {
         id:`google-${place.id}`,
-        name:place.displayName || "검색 장소",
-        sub:place.formattedAddress || "Google 지도 장소",
+        name:koreanPlaceText(place.displayName, `이누야마 검색 장소 ${index + 1}`),
+        sub:address,
         category:"검색",
         lat:place.location.lat(),
         lng:place.location.lng(),
         color:"#356fbd",
         hours:"",
-        description:place.formattedAddress || "Google 지도 검색 결과",
+        description:address,
         tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
         query:place.googleMapsURI || place.displayName || ""
-      }));
+      }});
       setPlaceResults(next);
     } catch {
       setRouteError("장소 검색을 사용할 수 없어요. Demo Key의 Places 할당량을 확인해 주세요.");
     } finally {
+      if (typeof preservedZoom === "number") mapRef.current?.setZoom(preservedZoom);
       setPlaceSearching(false);
     }
   };
@@ -361,15 +401,6 @@ export default function Home() {
         <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
       </header>
 
-      <div className="status-row">
-          <button className={`hotel-status ${hotel ? "saved" : ""}`} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}}>
-          <Building2 size={15}/>
-          <span>{hotel ? hotel.name : "숙소를 등록해 주세요"}</span>
-          {hotel ? <Check size={15}/> : <ChevronDown size={15}/>}
-        </button>
-        <button className="route-shortcut" onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={15}/> 길찾기</button>
-      </div>
-
       <section className="mobile-map-wrap">
         <div ref={mapEl} className="mobile-map"/>
         <button className="locate-button" onClick={useCurrentLocation}><LocateFixed size={18}/></button>
@@ -424,7 +455,7 @@ export default function Home() {
             <div className="google-results">
               {placeResults.map((point) => (
                 <article key={point.id} className="google-result">
-                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});mapRef.current?.setZoom(17);}}>
+                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
                     <MapPin size={17}/><span><b>{point.name}</b><small>{point.sub}</small></span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
@@ -443,7 +474,7 @@ export default function Home() {
             <div className="saved-list">
               {savedPlaces.map((point) => (
                 <article key={point.id} className="saved-row">
-                  <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});mapRef.current?.setZoom(17);}}>
+                  <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
                     <span style={{background:point.color}}>{point.name.slice(0,1)}</span><div><b>{point.name}</b><small>{point.sub}</small></div>
                   </button>
                   <button onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
