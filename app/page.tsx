@@ -37,6 +37,7 @@ type AiGuidePlan = {
   title:string; overview:string;
   days:{day:number;title:string;stops:{id:string;time:string;reason:string}[];tips:string[]}[];
   familyTips:string[]; weatherBackup:string[];
+  placeDetails?:{id:string;description?:string;items?:{name:string;price:string}[]}[];
 };
 
 const spots: Point[] = [
@@ -1514,7 +1515,7 @@ export default function Home() {
   const openAiGuidebook = async (force=false) => {
     setGuideOpen(true);
     const requestedArea=travelArea.trim();
-    if (!force && aiGuidePlan?.days?.length && aiGuideArea===requestedArea) {
+    if (!force && aiGuidePlan?.days?.length && aiGuidePlan.placeDetails?.length && aiGuideArea===requestedArea) {
       setAiGuideLoading(false);
       return;
     }
@@ -1524,7 +1525,31 @@ export default function Home() {
       const areaChanged=aiGuideArea!==requestedArea;
       const places = areaChanged || !guideRecommendations.length ? await buildAreaGuide() : guideRecommendations;
       if (!places?.length) throw new Error("먼저 여행 정보 저장 후 AI 추천 장소를 불러와 주세요.");
-      if (areaChanged && aiGuidePlanRef.current?.days?.length && aiGuideAreaRef.current===requestedArea) return;
+      if (areaChanged && aiGuidePlanRef.current?.days?.length && aiGuidePlanRef.current.placeDetails?.length && aiGuideAreaRef.current===requestedArea) return;
+      const sourcePlaces=[...regionalSavedPlaces,...places]
+        .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index);
+      let enrichedPlaces=sourcePlaces;
+      try {
+        const google=(window as any).google;
+        const {Place}=await google.maps.importLibrary("places");
+        const detailTargets=sourcePlaces
+          .filter((point)=>point.googlePlaceId && ["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"].includes(guideGroup(point)))
+          .slice(0,14);
+        const detailResults=await Promise.allSettled(detailTargets.map(async(point)=>{
+          const place=new Place({id:point.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
+          await place.fetchFields({fields:["editorialSummary","reviews","priceRange","priceLevel","primaryTypeDisplayName"]});
+          const details=googlePlaceDetails(place,point.name);
+          return {
+            ...point,
+            description:details.description||point.description,
+            reviewHighlights:details.reviewHighlights?.length?details.reviewHighlights:point.reviewHighlights,
+            googlePriceRange:details.googlePriceRange||point.googlePriceRange,
+            googlePriceLevel:details.googlePriceLevel||point.googlePriceLevel
+          };
+        }));
+        const detailMap=new Map(detailResults.flatMap((result)=>result.status==="fulfilled"?[[result.value.id,result.value] as const]:[]));
+        enrichedPlaces=sourcePlaces.map((point)=>detailMap.get(point.id)||point);
+      } catch {}
       const response = await fetch("/api/ai-guide",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1536,17 +1561,37 @@ export default function Home() {
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
           hotel,
-          places:[...regionalSavedPlaces,...places].map((point)=>({
+          places:enrichedPlaces.map((point)=>({
             id:point.id,name:point.name,category:guideGroup(point),lat:point.lat,lng:point.lng,
             reason:point.aiReason,price:point.aiPrice,famousItems:point.aiFamousItems,
             recommendedItems:point.aiRecommendedItems,recommendedMenu:point.recommendedMenu,
             visitTip:point.aiVisitTip,parkingTip:point.aiParkingTip,bestTime:point.aiBestTime,
-            description:point.description,familyTip:point.aiFamilyTip,hours:point.hours
+            description:point.description,googlePriceRange:point.googlePriceRange,
+            reviewHighlights:point.reviewHighlights,familyTip:point.aiFamilyTip,hours:point.hours
           }))
         })
       });
       const data = await response.json();
       if (!response.ok || !data.guide?.days) throw new Error(data.error || "AI 가이드북을 만들지 못했어요.");
+      const detailMap=new Map((Array.isArray(data.guide.placeDetails)?data.guide.placeDetails:[]).map((item:any)=>[item.id,item]));
+      if (detailMap.size) {
+        const mergeItems=(point:Point)=>{
+          const detail:any=detailMap.get(point.id);
+          if (!detail) return point;
+          const items=Array.isArray(detail.items)?detail.items.filter((item:any)=>item?.name).slice(0,4).map((item:any)=>({
+            name:String(item.name),price:String(item.price||"가격 현장 확인")
+          })):[];
+          return {
+            ...point,
+            description:detail.description||point.description,
+            aiRecommendedItems:items.length?items:point.aiRecommendedItems,
+            aiFamousItems:items.length?items.map((item:any)=>item.name):point.aiFamousItems,
+            recommendedMenu:items.length?items.map((item:any)=>item.name).join(" · "):point.recommendedMenu
+          };
+        };
+        setGuideRecommendations((current)=>current.map(mergeItems));
+        setSavedPlaces((current)=>current.map(mergeItems));
+      }
       setAiGuidePlan(data.guide);
       setAiGuideArea(requestedArea);
       aiGuidePlanRef.current=data.guide;
@@ -1898,11 +1943,11 @@ export default function Home() {
                 });
                 const mapPlaces = guidePlaces.slice(0,20);
                 const markerLabels = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                const markerParams = mapPlaces.map((point,index) =>
-                  `&markers=${encodeURIComponent(`color:0x${pointColor(point).replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
+                const markerParams = mapPlaces.map((point) =>
+                  `&markers=${encodeURIComponent(`size:tiny|color:0x${pointColor(point).replace("#","")}|${point.lat},${point.lng}`)}`
                 ).join("");
                 const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} ${travelCountry==="KR"?"대한민국":"일본"}`;
-                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
+                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=14&size=640x640&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 const attractions=guidePlaces.filter((point)=>["관광","역사","아이와 함께"].includes(guideGroup(point))).slice(0,12);
                 const foodPlaces=guidePlaces.filter((point)=>["맛집","카페","디저트"].includes(guideGroup(point))).slice(0,9);
@@ -1912,8 +1957,8 @@ export default function Home() {
                   .map((stop)=>guidePlaces.find((point)=>point.id===stop.id)).filter(Boolean).slice(0,7) as Point[];
                 const nearbyPlaces=[...foodPlaces,...attractions,...shoppingPlaces]
                   .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index).slice(0,10);
-                const nearbyMarkers=nearbyPlaces.map((point,index)=>
-                  `&markers=${encodeURIComponent(`color:0x${pointColor(point).replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
+                const nearbyMarkers=nearbyPlaces.map((point)=>
+                  `&markers=${encodeURIComponent(`size:tiny|color:0x${pointColor(point).replace("#","")}|${point.lat},${point.lng}`)}`
                 ).join("");
                 const nearbyMapUrl=mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=11&size=640x520&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${nearbyMarkers}&key=${encodeURIComponent(mapsKey)}` : "";
                 const itemLine=(point:Point)=>

@@ -17,9 +17,9 @@ export async function POST(request:Request) {
       thinking:{type:"disabled"},
       response_format:{type:"json_object"},
       temperature:0.2,
-      max_tokens:1500,
+      max_tokens:2600,
       messages:[
-        {role:"system",content:`너는 실제 여행책을 만드는 가족여행 편집자다. 제공된 장소만 사용하고 JSON만 답한다. 모든 비용은 반드시 trip.currency 화폐만 사용하고 다른 국가 화폐를 섞지 않는다. 고령자와 어린이가 무리하지 않도록 하루 3~4곳, 90분마다 휴식을 둔다. 각 stop의 reason은 추상적인 추천 이유가 아니라 다음을 한 문단에 구체적으로 쓴다: 관광지는 현장에서 꼭 할 일·볼 것, 식당과 카페는 꼭 주문할 실제 메뉴와 입력 가격, 쇼핑은 방문할 매장과 살 상품, 주류는 살 술의 종류·상품 및 가격, 마지막으로 이동·대기·가족 유의점. 입력에 없는 사실은 단정하지 않는다. 식사·카페·쇼핑·관광의 균형을 맞추고 같은 유형을 연속 배치하지 않는다. 근거 없는 가격은 만들지 말고 '가격 현장 확인'으로 쓴다. 형식 {"title":"지역명 우리 가족 실전 가이드","overview":"이 지역에서 무엇을 보고 먹고 살지 요약","days":[{"day":1,"title":"하루 테마","stops":[{"id":"장소 id","time":"09:30","reason":"여기서 할 일·먹을 것·살 것·가격·이동 팁"}],"tips":["교통·휴식·예약 팁"]}],"familyTips":["3개"],"weatherBackup":["실내 대체안 3개"]}.`},
+        {role:"system",content:`너는 실제 여행책을 만드는 가족여행 편집자다. 제공된 장소만 사용하고 JSON만 답한다. 모든 비용은 반드시 trip.currency 화폐만 사용하고 다른 국가 화폐를 섞지 않는다. Google 설명과 reviewHighlights에 실제로 언급된 메뉴·상품명을 최우선으로 추출한다. "대표 메뉴", "추천 상품", "지역 특산품", "시그니처 음료" 같은 일반명은 items.name에 절대 쓰지 않는다. 근거가 없으면 상품을 지어내지 말고 "매장 현장 메뉴 확인"으로 쓴다. placeDetails에는 식당·카페·쇼핑·주류 장소를 최대 14곳까지 빠짐없이 넣고, 각 장소별 실제 메뉴·상품을 최대 4개와 확인 가능한 가격으로 적는다. 고령자와 어린이가 무리하지 않도록 하루 3~4곳, 90분마다 휴식을 둔다. 각 stop reason에는 관광지에서 할 일, 식당의 실제 주문 메뉴, 쇼핑할 실제 상품, 주류 종류와 이동 유의점을 구체적으로 쓴다. 형식 {"title":"지역명 우리 가족 실전 가이드","overview":"이 지역에서 무엇을 보고 먹고 살지 요약","placeDetails":[{"id":"장소 id","description":"실제 판매 품목과 특징","items":[{"name":"후기·설명에 나온 실제 메뉴·상품명","price":"입력 가격 또는 가격 현장 확인"}]}],"days":[{"day":1,"title":"하루 테마","stops":[{"id":"장소 id","time":"09:30","reason":"여기서 할 일·먹을 것·살 것·가격·이동 팁"}],"tips":["교통·휴식·예약 팁"]}],"familyTips":["3개"],"weatherBackup":["실내 대체안 3개"]}.`},
         {role:"user",content:JSON.stringify({currentTimeKST:koreaTime,trip:body.trip,hotel:body.hotel,places})}
       ]
     })
