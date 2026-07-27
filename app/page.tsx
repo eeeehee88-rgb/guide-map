@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Building2, Car, Clock3, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Search, Trash2, X
+  BookOpen, Building2, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
+  Heart, MapPin, Navigation, Printer, Search, Trash2, X
 } from "lucide-react";
+import { toJpeg } from "html-to-image";
 
 type Category = "전체" | "맛집" | "카페" | "역사";
 type Point = {
@@ -74,8 +75,8 @@ function localizePoint(point: Point, fallback = "저장한 현지 장소"): Poin
 }
 
 function googlePlaceDetails(place:any, fallbackName:string) {
-  const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
-  const placeType = koreanPlaceText(place.primaryTypeDisplayName, "이누야마 현지 장소");
+  const address = koreanPlaceText(place.formattedAddress, "일본 현지 주소");
+  const placeType = koreanPlaceText(place.primaryTypeDisplayName, "일본 현지 장소");
   const rating = typeof place.rating === "number" ? place.rating : undefined;
   const reviewCount = typeof place.userRatingCount === "number" ? place.userRatingCount : undefined;
   const weekday = place.regularOpeningHours?.weekdayDescriptions?.[new Date().getDay()];
@@ -90,8 +91,18 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   };
 }
 
+function guideGroup(point:Point) {
+  if (point.category !== "검색") return point.category;
+  const type = point.placeType || "";
+  if (/식당|음식|라멘|요리/.test(type)) return "맛집";
+  if (/카페|커피|디저트|제과/.test(type)) return "카페";
+  if (/쇼핑|백화점|상점|시장/.test(type)) return "쇼핑";
+  return "관광";
+}
+
 export default function Home() {
   const mapEl = useRef<HTMLDivElement>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markerLayerRef = useRef<any[]>([]);
   const routeLayerRef = useRef<any>(null);
@@ -114,6 +125,12 @@ export default function Home() {
   const [placeSearching, setPlaceSearching] = useState(false);
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
   const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
+  const [travelArea, setTravelArea] = useState("이누야마");
+  const [areaMoving, setAreaMoving] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideStart, setGuideStart] = useState("");
+  const [guideEnd, setGuideEnd] = useState("");
+  const [guideSaving, setGuideSaving] = useState(false);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
@@ -140,6 +157,8 @@ export default function Home() {
         localStorage.setItem("inuyama-saved-places", JSON.stringify(localized));
       } catch {}
     }
+    const savedArea = localStorage.getItem("travel-search-area");
+    if (savedArea) setTravelArea(savedArea);
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
         setGoogleReady(true);
@@ -285,14 +304,14 @@ export default function Home() {
       const { Place } = await google.maps.importLibrary("places");
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
-        textQuery:`${placeQuery.trim()} 이누야마`,
+        textQuery:`${placeQuery.trim()} ${travelArea.trim() || "일본"}`,
         fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"],
         locationBias:center ? { center, radius:7000 } : undefined,
         language:"ko",
         maxResultCount:12
       });
       const next:Point[] = places.filter((place:any) => place.location).map((place:any, index:number) => {
-        const details = googlePlaceDetails(place, `이누야마 검색 장소 ${index + 1}`);
+        const details = googlePlaceDetails(place, `${travelArea || "일본"} 검색 장소 ${index + 1}`);
         return {
         id:`google-${place.id}`,
         name:details.name,
@@ -316,12 +335,49 @@ export default function Home() {
     }
   };
 
+  const moveToArea = async () => {
+    if (!travelArea.trim()) return;
+    setAreaMoving(true);
+    setRouteError("");
+    try {
+      const google = (window as any).google;
+      const geocoder = new google.maps.Geocoder();
+      const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
+      if (!areaResults?.[0]) throw new Error();
+      mapRef.current?.setCenter(areaResults[0].geometry.location);
+      mapRef.current?.setZoom(13);
+      localStorage.setItem("travel-search-area", travelArea.trim());
+      setPlaceResults([]);
+    } catch {
+      setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
+    } finally {
+      setAreaMoving(false);
+    }
+  };
+
+  const downloadGuideImage = async () => {
+    if (!guideRef.current) return;
+    setGuideSaving(true);
+    try {
+      const dataUrl = await toJpeg(guideRef.current, {
+        quality:.96, pixelRatio:1.5, backgroundColor:"#ffffff", width:720,
+        style:{ transform:"none", margin:"0", width:"720px" }
+      });
+      const link = document.createElement("a");
+      link.download = `${travelArea || "일본"}-가족여행-가이드.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } finally {
+      setGuideSaving(false);
+    }
+  };
+
   const searchHotel = async () => {
     if (!hotelQuery.trim()) return;
     setSearching(true);
     setResults([]);
     try {
-      const q = encodeURIComponent(`${hotelQuery.trim()} 犬山 愛知 日本`);
+      const q = encodeURIComponent(`${hotelQuery.trim()} ${travelArea.trim()} 日本`);
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=jp&accept-language=ko&q=${q}`);
       const data = await res.json();
       setResults(data);
@@ -410,14 +466,12 @@ export default function Home() {
     routeLayerRef.current = null;
     setRoute(null);
     setRouteError("");
-    mapRef.current?.setCenter({lat:35.3845,lng:136.9417});
-    mapRef.current?.setZoom(15);
   };
 
   return (
     <main className="mobile-app">
       <header className="mobile-header">
-        <div><small>우리 가족 이누야마 여행</small><h1>오늘 어디로 갈까요?</h1></div>
+        <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>오늘 어디로 갈까요?</h1></div>
         <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
       </header>
 
@@ -432,6 +486,7 @@ export default function Home() {
         <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
         <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
         <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
+        <button className={guideOpen ? "active" : ""} onClick={() => setGuideOpen(true)}><BookOpen size={19}/><span>가이드북</span></button>
       </nav>
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
@@ -474,6 +529,11 @@ export default function Home() {
         {sheet === "search" && (
           <>
             <div className="sheet-heading"><div><small>실제 Google 지도 데이터</small><h2>주변 장소 검색</h2></div><Search size={19}/></div>
+            <div className="area-search">
+              <MapPin size={17}/>
+              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&moveToArea()} placeholder="여행 지역 입력 · 예: 교토"/>
+              <button onClick={moveToArea}>{areaMoving ? "이동 중" : "지역 이동"}</button>
+            </div>
             <div className="hotel-search">
               <Search size={18}/>
               <input value={placeQuery} onChange={(e)=>setPlaceQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchGooglePlaces()} placeholder="식당, 카페, 관광지 검색"/>
@@ -513,6 +573,7 @@ export default function Home() {
               ))}
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
+            <button className="guide-create-button" onClick={() => setGuideOpen(true)}><BookOpen size={17}/> 저장 장소로 가이드북 만들기</button>
           </>
         )}
 
@@ -551,6 +612,76 @@ export default function Home() {
           </>
         )}
       </section>
+
+      {guideOpen && (
+        <section className="guide-overlay">
+          <div className="guide-toolbar">
+            <button className="guide-close" onClick={() => setGuideOpen(false)}><X size={19}/></button>
+            <div className="guide-date-fields">
+              <label><span>출발</span><input type="date" value={guideStart} onChange={(e)=>setGuideStart(e.target.value)}/></label>
+              <label><span>도착</span><input type="date" value={guideEnd} onChange={(e)=>setGuideEnd(e.target.value)}/></label>
+            </div>
+            <button onClick={downloadGuideImage} disabled={guideSaving}><Download size={17}/>{guideSaving ? "저장 중" : "이미지"}</button>
+            <button onClick={() => window.print()}><Printer size={17}/>PDF</button>
+          </div>
+          <div className="guide-scroll">
+            <div className="travel-guide" ref={guideRef}>
+              {(() => {
+                const guidePlaces = savedPlaces.length ? savedPlaces : spots.slice(0,8);
+                const minLat = Math.min(...guidePlaces.map((p)=>p.lat)), maxLat = Math.max(...guidePlaces.map((p)=>p.lat));
+                const minLng = Math.min(...guidePlaces.map((p)=>p.lng)), maxLng = Math.max(...guidePlaces.map((p)=>p.lng));
+                const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
+                return <>
+                  <article className="guide-page guide-cover">
+                    <div className="guide-title"><div><small>MY FAMILY TRAVEL GUIDE</small><h2>{travelArea || "일본"} 여행 지도</h2><p>저장한 장소를 한눈에 보는 우리 가족 맞춤 가이드</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
+                    <div className="guide-map-board">
+                      <div className="guide-grid"/>
+                      {guidePlaces.map((point,index) => {
+                        const left = 8 + ((point.lng-minLng)/(maxLng-minLng || 1))*82;
+                        const top = 9 + (1-(point.lat-minLat)/(maxLat-minLat || 1))*76;
+                        return <div className="guide-map-pin" key={point.id} style={{left:`${left}%`,top:`${top}%`,background:point.color}}><b>{index+1}</b><span>{point.name}</span></div>;
+                      })}
+                    </div>
+                    <div className="guide-index">
+                      {guidePlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
+                    </div>
+                  </article>
+
+                  <article className="guide-page">
+                    <div className="guide-page-title"><small>CITY ROUTE & SPOT GUIDE</small><h2>{travelArea || "일본"} 추천 동선</h2><span>{dateText}</span></div>
+                    <div className="route-ribbon">
+                      {hotel && <div><Building2/><b>{hotel.name}</b></div>}
+                      {guidePlaces.slice(0,6).map((point,index)=><div key={point.id}><span>{index+1}</span><b>{point.name}</b></div>)}
+                    </div>
+                    <h3 className="guide-section-label">저장한 장소</h3>
+                    <div className="guide-card-grid">
+                      {guidePlaces.slice(0,8).map((point,index)=><div className="guide-place-card" key={point.id}>
+                        <div className="guide-card-head" style={{background:point.color}}><span>{index+1}</span><b>{point.name}</b></div>
+                        <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
+                        <p>{point.description}</p>
+                        {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
+                        <footer><MapPin size={13}/>{point.sub}</footer>
+                      </div>)}
+                    </div>
+                  </article>
+
+                  <article className="guide-page guide-food-page">
+                    <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
+                    {["맛집","카페","쇼핑","관광","역사"].map((group) => {
+                      const items = guidePlaces.filter((point)=>guideGroup(point)===group);
+                      if (!items.length) return null;
+                      return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
+                        <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.description}</p>
+                      </article>)}</div></section>;
+                    })}
+                    <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
+                  </article>
+                </>;
+              })()}
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
