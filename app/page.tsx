@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
   Heart, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
@@ -406,6 +407,15 @@ export default function Home() {
     void loadDetails();
     return()=>{cancelled=true;};
   },[placeDetailOpen,googleReady,selected.id,selected.googlePlaceId,selected.detailLoaded]);
+
+  useEffect(() => {
+    if (!placeDetailOpen) return;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    return()=>{
+      document.body.style.overflow=previousOverflow;
+    };
+  },[placeDetailOpen]);
 
   const isPointInCurrentArea = (point:{lat:number;lng:number}) => {
     const center = areaPoint || (isInuyamaArea ? station : null);
@@ -1369,8 +1379,8 @@ export default function Home() {
                 </button>;
               })}
             </div>
-            {placeDetailOpen && <div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
-              <section className="place-detail-popup" onPointerDown={(event)=>event.stopPropagation()}>
+            {placeDetailOpen && createPortal(<div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
+              <section className="place-detail-popup" role="dialog" aria-modal="true" aria-label={`${selected.name} 상세 정보`} onPointerDown={(event)=>event.stopPropagation()}>
                 <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{selected.name}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
                 <div className="place-detail-popup-scroll">
             {selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
@@ -1444,7 +1454,7 @@ export default function Home() {
             </div>}
                 </div>
               </section>
-            </div>}
+            </div>,document.body)}
           </>
         )}
 
