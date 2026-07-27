@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Building2, Car, ChevronDown, ChevronUp, Clock3, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Search, SlidersHorizontal, Trash2, X
+  Building2, Car, Clock3, Footprints, LocateFixed,
+  Heart, MapPin, Navigation, Search, Trash2, X
 } from "lucide-react";
 
 type Category = "전체" | "맛집" | "카페" | "역사";
 type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
+  placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string };
@@ -70,6 +71,23 @@ function localizePoint(point: Point, fallback = "저장한 현지 장소"): Poin
   const name = koreanPlaceText(point.name, fallback);
   const address = koreanPlaceText(point.sub, "일본 아이치현 이누야마시");
   return { ...point, name, sub:address, description:address };
+}
+
+function googlePlaceDetails(place:any, fallbackName:string) {
+  const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
+  const placeType = koreanPlaceText(place.primaryTypeDisplayName, "이누야마 현지 장소");
+  const rating = typeof place.rating === "number" ? place.rating : undefined;
+  const reviewCount = typeof place.userRatingCount === "number" ? place.userRatingCount : undefined;
+  const weekday = place.regularOpeningHours?.weekdayDescriptions?.[new Date().getDay()];
+  const hours = koreanPlaceText(weekday, "영업시간은 방문 전에 확인해 주세요.");
+  const summarySource = typeof place.editorialSummary === "string" ? place.editorialSummary : place.editorialSummary?.text;
+  const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
+  const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
+  return {
+    name:koreanPlaceText(place.displayName, fallbackName),
+    address, placeType, rating, reviewCount, hours, description,
+    businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined
+  };
 }
 
 export default function Home() {
@@ -170,21 +188,22 @@ export default function Home() {
         try {
           const { Place } = await google.maps.importLibrary("places");
           const place = new Place({ id:event.placeId });
-          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI"] });
+          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"] });
           if (!place.location) return;
-          const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
+          const details = googlePlaceDetails(place, "지도에서 선택한 장소");
           const point:Point = {
             id:`google-${place.id}`,
-            name:koreanPlaceText(place.displayName, "지도에서 선택한 장소"),
-            sub:address,
+            name:details.name,
+            sub:details.address,
             category:"검색",
             lat:place.location.lat(),
             lng:place.location.lng(),
             color:"#356fbd",
-            hours:"",
-            description:address,
-            tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
+            hours:details.hours,
+            description:details.description,
+            tip:"영업시간과 가족 이동 동선을 확인한 뒤 방문해 주세요.",
             query:place.googleMapsURI || place.displayName || ""
+            ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus
           };
           setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
           setSelected(point);
@@ -267,25 +286,26 @@ export default function Home() {
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
         textQuery:`${placeQuery.trim()} 이누야마`,
-        fields:["id","displayName","formattedAddress","location","googleMapsURI"],
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"],
         locationBias:center ? { center, radius:7000 } : undefined,
         language:"ko",
         maxResultCount:12
       });
       const next:Point[] = places.filter((place:any) => place.location).map((place:any, index:number) => {
-        const address = koreanPlaceText(place.formattedAddress, "일본 아이치현 이누야마시");
+        const details = googlePlaceDetails(place, `이누야마 검색 장소 ${index + 1}`);
         return {
         id:`google-${place.id}`,
-        name:koreanPlaceText(place.displayName, `이누야마 검색 장소 ${index + 1}`),
-        sub:address,
+        name:details.name,
+        sub:details.address,
         category:"검색",
         lat:place.location.lat(),
         lng:place.location.lng(),
         color:"#356fbd",
-        hours:"",
-        description:address,
-        tip:"저장하거나 바로 길찾기에 사용할 수 있어요.",
+        hours:details.hours,
+        description:details.description,
+        tip:"영업시간과 가족 이동 동선을 확인한 뒤 방문해 주세요.",
         query:place.googleMapsURI || place.displayName || ""
+        ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus
       }});
       setPlaceResults(next);
     } catch {
@@ -416,17 +436,27 @@ export default function Home() {
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
         <button className="sheet-toggle" onClick={() => setSheetCollapsed((value) => !value)} aria-label={sheetCollapsed ? "패널 펼치기" : "패널 접기"}>
-          <span className="sheet-handle"/>{sheetCollapsed ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+          <span className="sheet-handle"/>
         </button>
         {sheet === "places" && (
           <>
-            <div className="sheet-heading"><div><small>추천 장소</small><h2>{selected.name}</h2></div><SlidersHorizontal size={19}/></div>
+            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2></div></div>
             <div className="category-scroll">
               {categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}
             </div>
             <div className="selected-place">
               <span className="place-dot" style={{background:selected.color}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
-              <div className="place-main"><div className="place-title"><b>{selected.name}</b><small>{selected.sub}</small></div><p>{selected.description}</p>{selected.tip && <div className="family-tip">가족 추천 · {selected.tip}</div>}</div>
+              <div className="place-main">
+                <div className="place-title"><b>{selected.name}</b><small>{selected.sub}</small></div>
+                {selected.category === "검색" && <div className="place-meta">
+                  {selected.placeType && <span>{selected.placeType}</span>}
+                  {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
+                  {selected.businessStatus && <span>{selected.businessStatus}</span>}
+                </div>}
+                <p>{selected.description}</p>
+                {selected.hours && <p className="place-hours"><Clock3 size={13}/>{selected.hours}</p>}
+                {selected.tip && <div className="family-tip">{selected.category === "검색" ? "방문 팁" : "가족 추천"} · {selected.tip}</div>}
+              </div>
             </div>
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
