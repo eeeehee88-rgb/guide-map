@@ -13,6 +13,7 @@ type Point = {
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
   photoUrl?: string;
+  recommendedMenu?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string };
@@ -109,6 +110,59 @@ function guideGroup(point:Point) {
   return "관광";
 }
 
+function recommendedMenuFor(name:string, type:string, primaryType?:string) {
+  const text = `${name} ${primaryType || ""}`.toLowerCase();
+  if (/라멘|らーめん|ラーメン/.test(text)) return "대표 라멘과 매장 인기 토핑";
+  if (/우동|うどん/.test(text)) return "대표 우동과 계절 튀김";
+  if (/스시|초밥|寿司|鮨/.test(text)) return "제철 모둠초밥 또는 추천 세트";
+  if (/돈카츠|とんかつ|豚カツ/.test(text)) return "대표 돈카츠 정식";
+  if (/야키니쿠|焼肉/.test(text)) return "인기 모둠구이와 가족 세트";
+  if (/오코노미|お好み/.test(text)) return "대표 오코노미야키";
+  if (/소바|そば|蕎麦/.test(text)) return "대표 소바와 튀김 세트";
+  if (/이자카야|居酒屋|술집/.test(text) || type === "이자카야·술집") return "모둠꼬치, 사시미와 지역 사케";
+  if (/카페|coffee|커피/.test(text) || type === "카페") return "시그니처 음료와 인기 디저트";
+  if (/디저트|베이커리|제과/.test(text) || type === "디저트") return "매장 대표 디저트와 계절 한정 메뉴";
+  if (type === "맛집") return "지역 특선 정식과 매장 대표 메뉴";
+  return "";
+}
+
+function subwayLinesFor(area:string) {
+  const key = area.toLowerCase();
+  if (/나고야|名古屋|nagoya/.test(key)) return [
+    {name:"히가시야마선",color:"#f4b400",stations:["다카바타","나고야","후시미","사카에","모토야마","후지가오카"]},
+    {name:"메이조선",color:"#8e44ad",stations:["가나야마","사카에","오조네","모토야마","야고토"]},
+    {name:"사쿠라도리선",color:"#e53935",stations:["다이코도리","나고야","마루노우치","히사야오도리","도쿠시게"]},
+    {name:"쓰루마이선",color:"#3498db",stations:["가미오타이","마루노우치","후시미","오스칸논","야고토","아카이케"]},
+    {name:"메이코선",color:"#8e44ad",stations:["가나야마","히비노","나고야코"]},
+    {name:"가미이다선",color:"#ec407a",stations:["헤이안도리","가미이다"]}
+  ];
+  if (/도쿄|東京|tokyo/.test(key)) return [
+    {name:"긴자선",color:"#f39c12",stations:["시부야","오모테산도","아카사카미쓰케","긴자","우에노","아사쿠사"]},
+    {name:"마루노우치선",color:"#e53935",stations:["신주쿠","아카사카미쓰케","도쿄","이케부쿠로"]},
+    {name:"히비야선",color:"#9e9e9e",stations:["나카메구로","롯폰기","긴자","아키하바라","우에노"]}
+  ];
+  if (/오사카|大阪|osaka/.test(key)) return [
+    {name:"미도스지선",color:"#e53935",stations:["신오사카","우메다","혼마치","난바","덴노지"]},
+    {name:"다니마치선",color:"#8e44ad",stations:["히가시우메다","덴마바시","다니마치","덴노지"]},
+    {name:"주오선",color:"#2e8b57",stations:["벤텐초","혼마치","모리노미야","나가타"]}
+  ];
+  if (/교토|京都|kyoto/.test(key)) return [
+    {name:"가라스마선",color:"#2e8b57",stations:["국제회관","가라스마오이케","시조","교토","다케다"]},
+    {name:"도자이선",color:"#e67e22",stations:["로쿠지조","산조케이한","가라스마오이케","우즈마사텐진가와"]}
+  ];
+  if (/삿포로|札幌|sapporo/.test(key)) return [
+    {name:"난보쿠선",color:"#2e8b57",stations:["아사부","삿포로","오도리","스스키노","마코마나이"]},
+    {name:"도자이선",color:"#e67e22",stations:["미야노사와","오도리","신삿포로"]},
+    {name:"도호선",color:"#3498db",stations:["사카에마치","삿포로","오도리","후쿠즈미"]}
+  ];
+  if (/후쿠오카|福岡|fukuoka/.test(key)) return [
+    {name:"공항선",color:"#e67e22",stations:["후쿠오카공항","하카타","기온","덴진","메이노하마"]},
+    {name:"하코자키선",color:"#3498db",stations:["나카스카와바타","하코자키","가이즈카"]},
+    {name:"나나쿠마선",color:"#2e8b57",stations:["하카타","야쿠인","롯폰마쓰","하시모토"]}
+  ];
+  return [];
+}
+
 export default function Home() {
   const mapEl = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -157,7 +211,8 @@ export default function Home() {
   const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
   const regionalSavedPlaces = areaPoint ? savedPlaces.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : savedPlaces;
   const regionalPlaceResults = areaPoint ? placeResults.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : placeResults;
-  const hasSubwayArea = /나고야|도쿄|오사카|교토|삿포로|후쿠오카|센다이|고베|요코하마|히로시마/i.test(travelArea);
+  const subwayLines = subwayLinesFor(travelArea);
+  const hasSubwayArea = subwayLines.length > 0;
 
   useEffect(() => {
     const saved = localStorage.getItem("inuyama-hotel");
@@ -444,7 +499,8 @@ export default function Home() {
             query:place.googleMapsURI || place.displayName || "",
             placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
             businessStatus:details.businessStatus,
-            photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 })
+            photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
+            recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName)
           };
         });
       }));
@@ -747,7 +803,7 @@ export default function Home() {
               <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
               <button onClick={()=>buildAreaGuide()} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
-              {hasSubwayArea && <button className="transit-jump" onClick={()=>document.getElementById("guide-transit-map")?.scrollIntoView({behavior:"smooth"})}>지하철 노선도 보기</button>}
+              <button className="transit-jump" onClick={()=>document.getElementById("guide-transit-map")?.scrollIntoView({behavior:"smooth"})}>교통 노선도 보기</button>
               {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
@@ -763,7 +819,6 @@ export default function Home() {
                 ).join("");
                 const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} 일본`;
                 const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
-                const transitMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(`${travelArea} 일본`)}&zoom=12&size=640x360&scale=2&language=ko&region=JP&maptype=roadmap&style=${encodeURIComponent("feature:transit.line|element:geometry|color:0x245fbd|weight:5")}&style=${encodeURIComponent("feature:transit.station|visibility:on")}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 return <>
                   <article className="guide-page guide-cover">
@@ -789,20 +844,24 @@ export default function Home() {
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
                         <p>{point.description}</p>
+                        {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
                         {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
                         <footer><MapPin size={13}/>{point.sub}</footer>
                       </div>)}
                     </div>
                   </article>
 
-                  {hasSubwayArea && <article id="guide-transit-map" className="guide-page guide-transit-page">
-                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·철도 지도</h2><span>{dateText}</span></div>
-                    <p className="transit-intro">추천 장소 사이를 이동할 때 활용할 수 있도록 주요 철도·지하철 노선을 표시했습니다.</p>
-                    <div className="guide-transit-map">
-                      {transitMapUrl ? <img src={transitMapUrl} alt={`${travelArea} 지하철과 철도 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">교통 지도를 불러오는 중입니다.</div>}
-                    </div>
+                  <article id="guide-transit-map" className="guide-page guide-transit-page">
+                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 교통 노선도</h2><span>{dateText}</span></div>
+                    <p className="transit-intro">{hasSubwayArea ? "주요 지하철 노선과 환승에 참고할 핵심 역을 별도로 정리했습니다." : "이 지역은 별도의 도시 지하철 노선이 확인되지 않아 철도·버스 이동을 중심으로 확인해 주세요."}</p>
+                    {hasSubwayArea ? <div className="subway-diagram">
+                      {subwayLines.map((line)=><div className="subway-line" key={line.name}>
+                        <b style={{background:line.color}}>{line.name}</b>
+                        <div>{line.stations.map((stationName,index)=><span key={stationName}><i style={{borderColor:line.color}}/>{stationName}{index<line.stations.length-1&&<small>—</small>}</span>)}</div>
+                      </div>)}
+                    </div> : <div className="no-subway"><Navigation size={30}/><b>도시 지하철 노선 없음</b><span>Google 지도에서 지역 철도와 버스 노선을 확인해 주세요.</span></div>}
                     <div className="transit-tips"><b>교통 이용 팁</b><span>교통카드를 사용하면 환승과 결제가 편리해요.</span><span>아이와 할머니가 함께 이동할 때는 엘리베이터 출구를 먼저 확인하세요.</span><span>정확한 막차와 운행 변경 정보는 방문 당일 확인해 주세요.</span></div>
-                  </article>}
+                  </article>
 
                   <article className="guide-page guide-food-page">
                     <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
@@ -812,6 +871,7 @@ export default function Home() {
                       return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.description}</p>
+                        {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
                       </article>)}</div></section>;
                     })}
                     <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
