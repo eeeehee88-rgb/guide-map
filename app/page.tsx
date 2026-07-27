@@ -12,11 +12,12 @@ type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
+  originalName?: string; originalAddress?: string;
   photoUrl?: string;
   recommendedMenu?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
-type SearchResult = { display_name: string; lat: string; lon: string; name?: string };
+type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
 type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean };
 
 const spots: Point[] = [
@@ -75,6 +76,10 @@ function koreanPlaceText(value: string | undefined, fallback: string) {
   return /[\u3040-\u30ff\u3400-\u9fff]/.test(translated) ? fallback : translated || fallback;
 }
 
+function containsJapanese(value: string | undefined) {
+  return Boolean(value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value));
+}
+
 function localizePoint(point: Point, fallback = "저장한 현지 장소"): Point {
   if (point.category !== "검색") return point;
   const name = koreanPlaceText(point.name, fallback);
@@ -83,6 +88,8 @@ function localizePoint(point: Point, fallback = "저장한 현지 장소"): Poin
 }
 
 function googlePlaceDetails(place:any, fallbackName:string) {
+  const rawName = (place.displayName || "").trim();
+  const rawAddress = (place.formattedAddress || "").trim();
   const address = koreanPlaceText(place.formattedAddress, "일본 현지 주소");
   const placeType = koreanPlaceText(place.primaryTypeDisplayName, "일본 현지 장소");
   const rating = typeof place.rating === "number" ? place.rating : undefined;
@@ -92,9 +99,12 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const summarySource = typeof place.editorialSummary === "string" ? place.editorialSummary : place.editorialSummary?.text;
   const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
   const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
-  const localizedName = koreanPlaceText(place.displayName, "");
+  const localizedName = koreanPlaceText(rawName, "");
+  const koreanName = localizedName || (containsJapanese(rawName) ? placeType : rawName) || fallbackName;
   return {
-    name:localizedName || place.displayName || fallbackName,
+    name:koreanName,
+    originalName:rawName && rawName !== koreanName ? rawName : undefined,
+    originalAddress:rawAddress && rawAddress !== address ? rawAddress : undefined,
     address, placeType, rating, reviewCount, hours, description,
     businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined
   };
@@ -380,7 +390,8 @@ export default function Home() {
             description:details.description,
             tip:"영업시간과 가족 이동 동선을 확인한 뒤 방문해 주세요.",
             query:place.googleMapsURI || place.displayName || ""
-            ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus
+            ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
+            originalName:details.originalName, originalAddress:details.originalAddress
           };
           setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
           setSelected(point);
@@ -400,7 +411,7 @@ export default function Home() {
       const marker = new google.maps.Marker({
         map:mapRef.current,
         position:{ lat:point.lat, lng:point.lng },
-        title:point.name,
+        title:point.originalName ? `${point.name} / ${point.originalName}` : point.name,
         label:{
           text:isCurrentLocation ? "현재" : point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2),
           color:"#ffffff",
@@ -493,7 +504,8 @@ export default function Home() {
         description:details.description,
         tip:"영업시간과 가족 이동 동선을 확인한 뒤 방문해 주세요.",
         query:place.googleMapsURI || place.displayName || ""
-        ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus
+        ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
+        originalName:details.originalName, originalAddress:details.originalAddress
       }});
       setPlaceResults(next);
       if (next[0]) setSelected(next[0]);
@@ -601,6 +613,7 @@ export default function Home() {
             query:place.googleMapsURI || place.displayName || "",
             placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
             businessStatus:details.businessStatus,
+            originalName:details.originalName, originalAddress:details.originalAddress,
             photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
             recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName)
           };
@@ -659,8 +672,10 @@ export default function Home() {
         maxResultCount:8
       });
       const next:SearchResult[] = places.filter((place:any)=>place.location).map((place:any)=>({
-        name:koreanPlaceText(place.displayName, hotelQuery.trim()),
-        display_name:koreanPlaceText(place.formattedAddress, place.formattedAddress || "일본 현지 주소"),
+        name:koreanPlaceText(place.displayName, koreanPlaceText(place.primaryTypeDisplayName, "숙소")),
+        display_name:koreanPlaceText(place.formattedAddress, "일본 현지 주소"),
+        originalName:place.displayName,
+        originalAddress:place.formattedAddress,
         lat:String(place.location.lat()),
         lon:String(place.location.lng())
       }));
@@ -801,14 +816,19 @@ export default function Home() {
         </button>
         {sheet === "places" && (
           <>
-            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2></div></div>
+            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2>{selected.originalName && <span className="original-name">{selected.originalName}</span>}</div></div>
             <div className="category-scroll">
               {categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
             </div>
             <div className="selected-place">
               <span className="place-dot" style={{background:selected.color}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
               <div className="place-main">
-                <div className="place-title"><b>{selected.name}</b><small>{selected.sub}</small></div>
+                <div className="place-title">
+                  <b>{selected.name}</b>
+                  {selected.originalName && <em>{selected.originalName}</em>}
+                  <small>{selected.sub}</small>
+                  {selected.originalAddress && <small className="original-address">{selected.originalAddress}</small>}
+                </div>
                 {selected.category === "검색" && <div className="place-meta">
                   {selected.placeType && <span>{selected.placeType}</span>}
                   {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
@@ -827,7 +847,7 @@ export default function Home() {
               <a href={selected.query.startsWith("http") ? selected.query : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
             <div className="spot-strip">
-              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b><small>{spot.sub}</small></button>)}
+              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.sub}</small></button>)}
             </div>
           </>
         )}
@@ -853,7 +873,7 @@ export default function Home() {
               {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
                   <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <MapPin size={17}/><span><b>{point.name}</b><small>{point.sub}</small></span>
+                    <MapPin size={17}/><span><b>{point.name}</b>{point.originalName && <em>{point.originalName}</em>}<small>{point.sub}</small></span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
                   <button className="result-route" onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
@@ -895,7 +915,7 @@ export default function Home() {
             </div>
             <button className="current-location" onClick={useCurrentLocation}><LocateFixed size={18}/><div><b>현재 위치 지도에 표시</b><small>이 기기의 위치를 빨간 점으로 표시하며 숙소로 저장하지 않아요</small></div></button>
             <div className="search-results">
-              {results.map((result, index) => <button key={`${result.lat}-${index}`} onClick={() => chooseHotel(result)}><MapPin size={17}/><div><b>{result.name || result.display_name.split(",")[0]}</b><small>{result.display_name}</small></div></button>)}
+              {results.map((result, index) => <button key={`${result.lat}-${index}`} onClick={() => chooseHotel(result)}><MapPin size={17}/><div><b>{result.name || result.display_name.split(",")[0]}</b>{result.originalName && result.originalName !== result.name && <em>{result.originalName}</em>}<small>{result.display_name}</small>{result.originalAddress && result.originalAddress !== result.display_name && <small className="original-address">{result.originalAddress}</small>}</div></button>)}
             </div>
             <p className="privacy-note">숙소는 이 휴대폰에만 저장되며 다른 사람에게 공유되지 않아요.</p>
           </>
