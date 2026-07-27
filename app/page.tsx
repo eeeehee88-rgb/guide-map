@@ -137,6 +137,13 @@ function guideGroup(point:Point) {
   return "관광";
 }
 
+function pointColor(point:Point) {
+  if (point.id === "current-location") return "#e53935";
+  if (point.category === "숙소") return "#7a5caf";
+  const group = guideGroup(point);
+  return categoryColors[group as Category] || point.color || categoryColors["관광"];
+}
+
 function recommendedMenuFor(name:string, type:string, primaryType?:string) {
   const text = `${name} ${primaryType || ""}`.toLowerCase();
   if (/라멘|らーめん|ラーメン/.test(text)) return "대표 라멘과 매장 인기 토핑";
@@ -151,6 +158,16 @@ function recommendedMenuFor(name:string, type:string, primaryType?:string) {
   if (/디저트|베이커리|제과/.test(text) || type === "디저트") return "매장 대표 디저트와 계절 한정 메뉴";
   if (type === "맛집") return "지역 특선 정식과 매장 대표 메뉴";
   return "";
+}
+
+function priceGuideFor(type:string) {
+  if (type === "맛집") return "약 ¥800~2,500 / 1인";
+  if (type === "카페" || type === "디저트") return "약 ¥500~1,500 / 1인";
+  if (type === "이자카야·술집") return "약 ¥2,000~4,500 / 1인";
+  if (type === "주류") return "약 ¥800~3,000 / 상품";
+  if (type === "쇼핑" || type === "전통시장") return "상품별 가격 상이";
+  if (type === "온천·휴식") return "약 ¥800~2,500 / 1인";
+  return "입장료는 방문 전 확인";
 }
 
 function subwayLinesFor(area:string) {
@@ -276,7 +293,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v3:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -464,7 +481,7 @@ export default function Home() {
         },
         icon:{
           path:google.maps.SymbolPath.CIRCLE,
-          fillColor:isCurrentLocation ? "#e53935" : point.color,
+          fillColor:pointColor(point),
           fillOpacity:1,
           strokeColor:"#ffffff",
           strokeWeight:selected.id === point.id ? 4 : 3,
@@ -588,6 +605,7 @@ export default function Home() {
 
   const buildAreaGuide = async (providedCenter?: any, providedBounds?: any) => {
     if (!travelArea.trim()) return;
+    let fallbackPoints:Point[] = [];
     setGuideLoading(true);
     setGuideRecommendations([]);
     setPlaceResults([]);
@@ -677,6 +695,17 @@ export default function Home() {
       const candidates = batches.flatMap((batch) => batch.status === "fulfilled" ? batch.value : [])
         .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
       if (!candidates.length) throw new Error();
+      fallbackPoints = candidates.map((point)=>({
+        ...point,
+        color:pointColor(point),
+        aiReason:point.tip,
+        aiFamousItems:point.recommendedMenu ? [point.recommendedMenu] : [],
+        aiPrice:priceGuideFor(point.placeType || guideGroup(point)),
+        aiFamilyTip:point.tip
+      }));
+      setGuideRecommendations(fallbackPoints);
+      setSelected(fallbackPoints[0]);
+      setDestinationId(fallbackPoints[0].id);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -695,13 +724,14 @@ export default function Home() {
       const aiData = await aiResponse.json();
       if (!aiResponse.ok || !Array.isArray(aiData.result?.recommendations)) throw new Error(aiData.error || "AI 추천 실패");
       const recommendationMap = new Map(aiData.result.recommendations.map((item:any)=>[item.id,item]));
-      const next = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
+      const aiSelected = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
         const ai:any = recommendationMap.get(point.id);
         return {
           ...point,
+          color:pointColor(point),
           aiReason:ai.reason,
-          aiPrice:ai.priceGuide,
-          aiFamousItems:Array.isArray(ai.famousItems) ? ai.famousItems : [],
+          aiPrice:ai.priceGuide || priceGuideFor(point.placeType || guideGroup(point)),
+          aiFamousItems:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems : point.recommendedMenu ? [point.recommendedMenu] : [],
           aiFamilyTip:ai.familyTip,
           aiBestTime:ai.bestTime,
           tip:ai.familyTip || point.tip,
@@ -711,6 +741,8 @@ export default function Home() {
         const pa:any=recommendationMap.get(a.id), pb:any=recommendationMap.get(b.id);
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
+      const aiIds = new Set(aiSelected.map((point)=>point.id));
+      const next = [...aiSelected,...fallbackPoints.filter((point)=>!aiIds.has(point.id))].slice(0,20);
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
@@ -729,6 +761,11 @@ export default function Home() {
       setRoute(null);
       return next;
     } catch (error:any) {
+      if (fallbackPoints.length) {
+        setGuideRecommendations(fallbackPoints);
+        setRouteError("추천 장소를 먼저 표시했어요. AI 상세 정보는 가이드북에서 다시 만들 수 있어요.");
+        return fallbackPoints;
+      }
       setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       return [] as Point[];
     } finally {
@@ -1078,8 +1115,8 @@ export default function Home() {
             <div className="category-scroll">
               {categories.map((item) => <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
             </div>
-            <div className="selected-place">
-              <span className="place-dot" style={{background:selected.color}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
+            <div className="selected-place" style={{"--place-color":pointColor(selected)} as React.CSSProperties}>
+              <span className="place-dot" style={{background:pointColor(selected)}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
               <div className="place-main">
                 <div className="place-title">
                   <b>{selected.name}</b>
@@ -1115,7 +1152,7 @@ export default function Home() {
               <small className="ai-disclaimer">AI가 Google 장소 후보와 등록한 여행 구성으로 만든 추천 정보예요. 가격·메뉴·영업시간은 방문 전에 확인해 주세요.</small>
             </div>}
             <div className="spot-strip">
-              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.sub}</small></button>)}
+              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.sub}</small></button>)}
             </div>
           </>
         )}
@@ -1141,7 +1178,7 @@ export default function Home() {
               {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
                   <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <MapPin size={17}/><span><b>{point.name}</b>{point.originalName && <em>{point.originalName}</em>}<small>{point.sub}</small></span>
+                    <MapPin size={17} style={{color:pointColor(point)}}/><span><b>{point.name}</b>{point.originalName && <em>{point.originalName}</em>}<small>{point.sub}</small></span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
                   <button className="result-route" onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
@@ -1160,7 +1197,7 @@ export default function Home() {
               {savedPlaces.map((point) => (
                 <article key={point.id} className="saved-row">
                   <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <span style={{background:point.color}}>{point.name.slice(0,1)}</span><div><b>{point.name}</b><small>{point.sub}</small></div>
+                    <span style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span><div><b>{point.name}</b><small>{point.sub}</small></div>
                   </button>
                   <button onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
                   <button className="delete-saved" onClick={() => toggleSavedPlace(point)} aria-label="삭제"><Trash2 size={16}/></button>
@@ -1301,7 +1338,7 @@ export default function Home() {
                 const mapPlaces = guidePlaces.slice(0,20);
                 const markerLabels = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
                 const markerParams = mapPlaces.map((point,index) =>
-                  `&markers=${encodeURIComponent(`color:0x${point.color.replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
+                  `&markers=${encodeURIComponent(`color:0x${pointColor(point).replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
                 ).join("");
                 const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} 일본`;
                 const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
@@ -1313,7 +1350,7 @@ export default function Home() {
                       {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
                     </div>
                     <div className="guide-index">
-                      {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
+                      {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:pointColor(point)}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
                     </div>
                   </article>
 
@@ -1337,12 +1374,12 @@ export default function Home() {
                     <h3 className="guide-section-label">저장한 장소</h3>
                     <div className="guide-card-grid">
                       {guidePlaces.slice(0,12).map((point,index)=><div className="guide-place-card" key={point.id}>
-                        <div className="guide-card-head" style={{background:point.color}}><span>{index+1}</span><b>{point.name}</b></div>
+                        <div className="guide-card-head" style={{background:pointColor(point)}}><span>{index+1}</span><b>{point.name}</b></div>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
                         <p>{point.aiReason || point.description}</p>
-                        {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
-                        {point.aiPrice && <em>예상 가격 · {point.aiPrice}</em>}
+                        <em>{guideGroup(point)==="맛집"||guideGroup(point)==="카페"||guideGroup(point)==="디저트" ? "추천 메뉴" : "추천 포인트"} · {point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
+                        <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || guideGroup(point))}</em>
                         {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
                         <footer><MapPin size={13}/>{point.sub}</footer>
                       </div>)}
@@ -1366,11 +1403,11 @@ export default function Home() {
                     {["관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"].map((group) => {
                       const items = guidePlaces.filter((point)=>guideGroup(point)===group);
                       if (!items.length) return null;
-                      return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
+                      return <section className="guide-group" key={group} style={{"--group-color":categoryColors[group as Category]} as React.CSSProperties}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id} style={{borderTop:`3px solid ${pointColor(point)}`}}>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.aiReason || point.description}</p>
-                        {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
-                        {point.aiPrice && <em>예상 가격 · {point.aiPrice}</em>}
+                        <em>{group==="맛집"||group==="카페"||group==="디저트" ? "추천 메뉴" : "추천 포인트"} · {point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
+                        <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || group)}</em>
                       </article>)}</div></section>;
                     })}
                     <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
