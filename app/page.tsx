@@ -18,6 +18,9 @@ type Point = {
   aiRecommendedItems?: {name:string;price:string}[]; aiVisitTip?:string; aiParkingTip?:string;
   photoUrl?: string;
   recommendedMenu?: string;
+  googlePlaceId?: string; phone?: string; website?: string; openNow?: boolean;
+  weeklyHours?: string[]; reviewSummary?: string; serviceOptions?: string[];
+  parkingOptions?: string[]; accessibility?: string[]; detailLoaded?: boolean;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type Traveler = { id:string; relation:string; age:string };
@@ -110,7 +113,8 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const placeType = koreanPlaceText(place.primaryTypeDisplayName, "일본 현지 장소");
   const rating = typeof place.rating === "number" ? place.rating : undefined;
   const reviewCount = typeof place.userRatingCount === "number" ? place.userRatingCount : undefined;
-  const weekday = place.regularOpeningHours?.weekdayDescriptions?.[new Date().getDay()];
+  const openingHours = place.currentOpeningHours || place.regularOpeningHours;
+  const weekday = openingHours?.weekdayDescriptions?.[new Date().getDay()];
   const hours = koreanPlaceText(weekday, "영업시간은 방문 전에 확인해 주세요.");
   const summarySource = typeof place.editorialSummary === "string" ? place.editorialSummary : place.editorialSummary?.text;
   const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
@@ -127,13 +131,42 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const reviewHighlights = Array.isArray(place.reviews)
     ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,3)
     : [];
+  const summaryText = (value:any) => typeof value === "string" ? value : value?.text || value?.overview || "";
+  const reviewSummary = koreanPlaceText(
+    summaryText(place.reviewSummary) || summaryText(place.generativeSummary),
+    ""
+  );
+  const serviceLabels:[string,string][] = [
+    ["dineIn","매장 식사"],["takeout","포장 가능"],["delivery","배달 가능"],["reservable","예약 가능"],
+    ["outdoorSeating","야외 좌석"],["servesBreakfast","아침식사"],["servesLunch","점심식사"],
+    ["servesDinner","저녁식사"],["servesCoffee","커피"],["servesDessert","디저트"],
+    ["servesBeer","맥주"],["servesCocktails","칵테일"],["goodForChildren","아이 동반 적합"],
+    ["goodForGroups","단체 이용 적합"],["menuForChildren","어린이 메뉴"],["restroom","화장실"]
+  ];
+  const serviceOptions = serviceLabels.filter(([key])=>place[key] === true).map(([,label])=>label);
+  const parkingLabels:[string,string][] = [
+    ["freeParkingLot","무료 주차장"],["paidParkingLot","유료 주차장"],["freeStreetParking","무료 노상주차"],
+    ["paidStreetParking","유료 노상주차"],["valetParking","발레파킹"],["freeGarageParking","무료 실내주차"],
+    ["paidGarageParking","유료 실내주차"]
+  ];
+  const parkingOptions = parkingLabels.filter(([key])=>place.parkingOptions?.[key] === true).map(([,label])=>label);
+  const accessibilityLabels:[string,string][] = [
+    ["wheelchairAccessibleEntrance","휠체어 출입 가능"],["wheelchairAccessibleParking","휠체어 주차 가능"],
+    ["wheelchairAccessibleRestroom","휠체어 화장실"],["wheelchairAccessibleSeating","휠체어 좌석"]
+  ];
+  const accessibility = accessibilityLabels.filter(([key])=>place.accessibilityOptions?.[key] === true).map(([,label])=>label);
   return {
     name:koreanName,
     originalName:rawName && rawName !== koreanName ? rawName : undefined,
     originalAddress:rawAddress && rawAddress !== address ? rawAddress : undefined,
     address, placeType, rating, reviewCount, hours, description,
-    businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined,
-    googlePriceRange,googlePriceLevel,reviewHighlights
+    businessStatus:place.businessStatus === "OPERATIONAL" ? "정상 영업" : place.businessStatus === "CLOSED_TEMPORARILY" ? "임시 휴업" : place.businessStatus === "CLOSED_PERMANENTLY" ? "폐업" : undefined,
+    googlePriceRange,googlePriceLevel,reviewHighlights,
+    phone:place.nationalPhoneNumber || place.internationalPhoneNumber || undefined,
+    website:place.websiteURI || place.websiteUri || undefined,
+    openNow:typeof openingHours?.openNow === "boolean" ? openingHours.openNow : undefined,
+    weeklyHours:Array.isArray(openingHours?.weekdayDescriptions) ? openingHours.weekdayDescriptions : [],
+    reviewSummary,serviceOptions,parkingOptions,accessibility
   };
 }
 
@@ -269,6 +302,7 @@ export default function Home() {
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
   const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
+  const [placeDetailLoading, setPlaceDetailLoading] = useState(false);
   const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
@@ -315,7 +349,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide-v7:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v8:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -327,6 +361,52 @@ export default function Home() {
   const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations, ...routeSearchPoints];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
+
+  useEffect(() => {
+    if (!placeDetailOpen || !googleReady || !selected.googlePlaceId || selected.detailLoaded) return;
+    let cancelled=false;
+    const loadDetails=async()=>{
+      setPlaceDetailLoading(true);
+      try {
+        const google=(window as any).google;
+        const {Place}=await google.maps.importLibrary("places");
+        const place=new Place({id:selected.googlePlaceId});
+        await place.fetchFields({fields:[
+          "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
+          "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
+          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
+          "reviews","editorialSummary","generativeSummary","reviewSummary","parkingOptions","paymentOptions",
+          "accessibilityOptions","dineIn","takeout","delivery","reservable","outdoorSeating","restroom",
+          "goodForChildren","goodForGroups","menuForChildren","servesBreakfast","servesLunch","servesDinner",
+          "servesCoffee","servesDessert","servesBeer","servesCocktails"
+        ]});
+        if (cancelled) return;
+        const details=googlePlaceDetails(place,selected.name);
+        const enriched:Point={
+          ...selected,...details,sub:details.address,detailLoaded:true,
+          query:place.googleMapsURI || selected.query,
+          photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560}) || selected.photoUrl
+        };
+        setSelected(enriched);
+        const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?enriched:item);
+        setPlaceResults(replace);
+        setGuideRecommendations(replace);
+        setSavedPlaces((items)=>{
+          if (!items.some((item)=>item.id===enriched.id)) return items;
+          const next=replace(items);
+          localStorage.setItem("saved-google-places",JSON.stringify(next));
+          return next;
+        });
+      } catch {
+        if (!cancelled) setSelected((current)=>current.id===selected.id?{...current,detailLoaded:true}:current);
+      } finally {
+        if (!cancelled) setPlaceDetailLoading(false);
+      }
+    };
+    void loadDetails();
+    return()=>{cancelled=true;};
+  },[placeDetailOpen,googleReady,selected.id,selected.googlePlaceId,selected.detailLoaded]);
+
   const isPointInCurrentArea = (point:{lat:number;lng:number}) => {
     const center = areaPoint || (isInuyamaArea ? station : null);
     const insideBounds = areaBounds?.contains
@@ -456,7 +536,7 @@ export default function Home() {
         try {
           const { Place } = await google.maps.importLibrary("places");
           const place = new Place({ id:event.placeId });
-          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","priceLevel","priceRange","reviews","editorialSummary"] });
+          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"] });
           if (!place.location) return;
           const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
           const currentCenter = areaPoint || (isInuyamaArea ? station : null);
@@ -482,6 +562,7 @@ export default function Home() {
             ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress
             ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
+            ,googlePlaceId:place.id,photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
           };
           setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
           setSelected(point);
@@ -609,7 +690,7 @@ export default function Home() {
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
         textQuery:`${query} ${travelArea.trim() || "일본"}`,
-        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","priceLevel","priceRange","reviews","editorialSummary"],
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"],
         ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
         maxResultCount:12
@@ -638,6 +719,7 @@ export default function Home() {
         ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
         originalName:details.originalName, originalAddress:details.originalAddress
         ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
+        ,googlePlaceId:place.id,photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
       }});
       setPlaceResults(next);
       if (next[0]) setSelected(next[0]);
@@ -745,7 +827,7 @@ export default function Home() {
         { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
       ];
       const batches = await Promise.allSettled(types.map(async (type) => {
-        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange","reviews","editorialSummary"];
+        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
         const { places:localPlaces } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
           fields,
@@ -791,7 +873,8 @@ export default function Home() {
             originalName:details.originalName, originalAddress:details.originalAddress,
             googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights,
             photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
-            recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName)
+            recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName),
+            googlePlaceId:place.id
           };
         });
       }));
@@ -814,6 +897,8 @@ export default function Home() {
       setGuideRecommendations(fallbackPoints);
       setSelected(fallbackPoints[0]);
       setDestinationId(fallbackPoints[0].id);
+      setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
+      setGuideLoading(false);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -823,7 +908,7 @@ export default function Home() {
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
-          candidates:candidates.map((point)=>({
+          candidates:candidates.slice(0,18).map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
             rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
             googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
@@ -1303,13 +1388,35 @@ export default function Home() {
                   {selected.placeType && <span>{selected.placeType}</span>}
                   {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
                   {selected.businessStatus && <span>{selected.businessStatus}</span>}
+                  {typeof selected.openNow === "boolean" && <span className={selected.openNow?"open-now":"closed-now"}>{selected.openNow?"현재 영업 중":"현재 영업 종료"}</span>}
                 </div>}
+                {placeDetailLoading&&<div className="place-detail-loading"><Sparkles size={14}/>Google 상세 정보를 불러오는 중…</div>}
                 <p>{selected.description}</p>
                 {(selected.googlePriceRange||selected.googlePriceLevel)&&<p className="place-price">Google 가격 정보 · {selected.googlePriceRange || selected.googlePriceLevel}</p>}
                 {selected.hours && <p className="place-hours"><Clock3 size={13}/>{selected.hours}</p>}
                 {selected.tip && <div className="family-tip">{selected.category === "검색" ? "방문 팁" : "가족 추천"} · {selected.tip}</div>}
               </div>
             </div>
+            {(selected.phone||selected.website)&&<div className="place-contact-row">
+              {selected.phone&&<a href={`tel:${selected.phone}`}><span>전화</span><b>{selected.phone}</b></a>}
+              {selected.website&&<a href={selected.website} target="_blank" rel="noreferrer"><span>공식 웹사이트</span><b>메뉴·예약 확인</b></a>}
+            </div>}
+            {selected.serviceOptions&&selected.serviceOptions.length>0&&<section className="google-detail-block">
+              <h3>이용 정보</h3><div className="detail-chip-list">{selected.serviceOptions.map((item)=><span key={item}>{item}</span>)}</div>
+            </section>}
+            {(selected.parkingOptions?.length||selected.accessibility?.length)&&<section className="google-detail-block">
+              <h3>주차·편의시설</h3>
+              <div className="detail-chip-list">{[...(selected.parkingOptions||[]),...(selected.accessibility||[])].map((item)=><span key={item}>{item}</span>)}</div>
+            </section>}
+            {selected.weeklyHours&&selected.weeklyHours.length>0&&<details className="weekly-hours">
+              <summary>요일별 운영시간 전체 보기</summary>
+              <div>{selected.weeklyHours.map((item)=><p key={item}>{item}</p>)}</div>
+            </details>}
+            {(selected.reviewSummary||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
+              <h3>Google 이용자 후기 요약</h3>
+              {selected.reviewSummary&&<p>{selected.reviewSummary}</p>}
+              {selected.reviewHighlights?.slice(0,3).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+            </section>}
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setPlaceDetailOpen(false); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
               <button className={`save-action ${savedPlaces.some((item) => item.id === selected.id) ? "saved" : ""}`} onClick={() => toggleSavedPlace(selected)} aria-label="장소 저장">
@@ -1551,6 +1658,11 @@ export default function Home() {
                     <div className="guide-map-board">
                       {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
                     </div>
+                    <div className="guide-quick-facts">
+                      <div><small>여행 구성</small><b>{travelers.map((item)=>item.age?`${item.relation} ${item.age}세`:item.relation).join(" · ")}</b></div>
+                      <div><small>일정</small><b>{tripDays?`${tripDays.nights}박 ${tripDays.days}일`:"당일 여행"}</b></div>
+                      <div><small>가이드 범위</small><b>{mapPlaces.length}곳 · {new Set(mapPlaces.map(guideGroup)).size}개 테마</b></div>
+                    </div>
                     <div className="guide-index">
                       {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:pointColor(point)}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
                     </div>
@@ -1562,7 +1674,11 @@ export default function Home() {
                     <div className="ai-day-list">
                       {aiGuidePlan.days.map((day)=><section key={day.day}><h3><span>DAY {day.day}</span>{day.title}</h3><div>{day.stops.map((stop,index)=>{
                         const point=guidePlaces.find((item)=>item.id===stop.id);
-                        return <article key={`${day.day}-${stop.id}-${index}`}><time>{stop.time}</time><div><b>{point?.name||"추천 장소"}</b><p>{stop.reason}</p></div></article>;
+                        return <article key={`${day.day}-${stop.id}-${index}`}>
+                          <time>{stop.time}</time>
+                          {point?.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
+                          <div><b>{point?.name||"추천 장소"}</b>{point&&<small>{guideGroup(point)} · {point.aiPrice||point.googlePriceRange||"가격 현장 확인"}</small>}<p>{stop.reason}</p></div>
+                        </article>;
                       })}</div>{day.tips?.length>0&&<footer>{day.tips.join(" · ")}</footer>}</section>)}
                     </div>
                     <div className="ai-guide-tips"><div><b>가족 여행 팁</b><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><b>날씨 대체안</b><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></div>
