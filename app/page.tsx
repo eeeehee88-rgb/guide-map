@@ -104,9 +104,12 @@ function guideGroup(point:Point) {
   if (point.category !== "검색") return point.category;
   const type = point.placeType || "";
   if (["관광","맛집","카페","쇼핑","주류","이자카야·술집","온천·휴식","디저트","전통시장","아이와 함께"].includes(type)) return type;
-  if (/식당|음식|라멘|요리/.test(type)) return "맛집";
-  if (/카페|커피|디저트|제과/.test(type)) return "카페";
-  if (/쇼핑|백화점|상점|시장/.test(type)) return "쇼핑";
+  if (/식당|음식|라멘|요리|레스토랑|스시|우동|소바|돈카츠/.test(type)) return "맛집";
+  if (/카페|커피|디저트|제과|베이커리/.test(type)) return "카페";
+  if (/쇼핑|백화점|상점|시장|편의점|마트|슈퍼|약국|드럭스토어/.test(type)) return "쇼핑";
+  if (/주류|술|사케|와인/.test(type)) return "주류";
+  if (/이자카야|바 |술집|펍/.test(type)) return "이자카야·술집";
+  if (/온천|스파|목욕/.test(type)) return "온천·휴식";
   return "관광";
 }
 
@@ -250,9 +253,11 @@ export default function Home() {
     return insideBounds && insideRadius;
   };
   const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
-  const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
   const regionalSavedPlaces = savedPlaces.filter(isPointInCurrentArea);
   const regionalPlaceResults = placeResults.filter(isPointInCurrentArea);
+  const combinedPlacePool = [...regionalPlaceResults, ...recommendationPool]
+    .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id || item.name===point.name)===index);
+  const visibleSpots = category === "전체" ? combinedPlacePool : combinedPlacePool.filter((p) => guideGroup(p) === category);
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -448,17 +453,20 @@ export default function Home() {
     persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
   };
 
-  const searchGooglePlaces = async () => {
-    if (!placeQuery.trim()) return;
+  const searchGooglePlaces = async (queryOverride?:string) => {
+    const query = (queryOverride || placeQuery).trim();
+    if (!query) return;
+    if (queryOverride) setPlaceQuery(query);
     setPlaceSearching(true);
     setPlaceResults([]);
+    setRouteError("");
     const preservedZoom = mapRef.current?.getZoom();
     try {
       const google = (window as any).google;
       const { Place } = await google.maps.importLibrary("places");
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
-        textQuery:`${placeQuery.trim()} ${travelArea.trim() || "일본"}`,
+        textQuery:`${query} ${travelArea.trim() || "일본"}`,
         fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"],
         ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
@@ -488,6 +496,8 @@ export default function Home() {
         ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus
       }});
       setPlaceResults(next);
+      if (next[0]) setSelected(next[0]);
+      if (!next.length) setRouteError(`${travelArea} 지역 안에서 '${query}' 검색 결과를 찾지 못했어요.`);
     } catch {
       setRouteError("장소 검색을 사용할 수 없어요. Demo Key의 Places 할당량을 확인해 주세요.");
     } finally {
@@ -748,11 +758,13 @@ export default function Home() {
 
   const selectRecommendationCategory = (item:Category) => {
     setCategory(item);
-    const candidates = item === "전체" ? recommendationPool : recommendationPool.filter((point)=>guideGroup(point)===item);
+    const candidates = item === "전체" ? combinedPlacePool : combinedPlacePool.filter((point)=>guideGroup(point)===item);
     const next = candidates[0] || areaPoint;
-    if (!next) return;
-    setSelected(next);
-    mapRef.current?.panTo({lat:next.lat,lng:next.lng});
+    if (next) {
+      setSelected(next);
+      mapRef.current?.panTo({lat:next.lat,lng:next.lng});
+    }
+    if (item !== "전체") void searchGooglePlaces(item);
   };
 
   return (
@@ -830,12 +842,13 @@ export default function Home() {
             </div>
             <div className="hotel-search">
               <Search size={18}/>
-              <input value={placeQuery} onChange={(e)=>setPlaceQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchGooglePlaces()} placeholder="식당, 카페, 관광지 검색"/>
-              <button onClick={searchGooglePlaces}>{placeSearching ? "검색 중" : "검색"}</button>
+              <input value={placeQuery} onChange={(e)=>setPlaceQuery(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter"){setCategory("전체");void searchGooglePlaces();}}} placeholder="편의점, 식당, 카페, 관광지 검색"/>
+              <button onClick={()=>{setCategory("전체");void searchGooglePlaces();}}>{placeSearching ? "검색 중" : "검색"}</button>
             </div>
             <div className="quick-search">
-              {["가족 식당","카페 디저트","전통거리","아이와 관광지"].map((query) => <button key={query} onClick={() => {setPlaceQuery(query);}}>{query}</button>)}
+              {["편의점","마트","약국","주차장","가족 식당","카페 디저트","관광지"].map((query) => <button key={query} onClick={() => {setCategory("전체");void searchGooglePlaces(query);}}>{query}</button>)}
             </div>
+            {regionalPlaceResults.length > 0 && <p className="search-result-count">{travelArea} 검색 결과 {regionalPlaceResults.length}곳</p>}
             <div className="google-results">
               {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
