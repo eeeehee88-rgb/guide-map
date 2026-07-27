@@ -266,3 +266,30 @@ button:disabled{cursor:not-allowed;opacity:.58}
   .traveler-row{grid-template-columns:32px minmax(0,1fr) 68px}
   .traveler-row>button{grid-column:3}
 }
+
+/* Place detail popup and editorial guidebook chapters */
+.bottom-sheet.detail-open{z-index:1000}
+.place-detail-overlay{position:fixed;z-index:1100;top:0;bottom:0;left:50%;width:min(520px,100vw);transform:translateX(-50%);display:flex;align-items:flex-end;background:rgba(19,30,25,.42);backdrop-filter:blur(2px)}
+.place-detail-popup{width:100%;max-height:92dvh;display:flex;flex-direction:column;overflow:hidden;border-radius:24px 24px 0 0;background:#fff;box-shadow:0 -12px 40px rgba(0,32,26,.18)}
+.place-detail-popup-head{position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px 12px;border-bottom:1px solid rgba(190,201,196,.65);background:rgba(255,255,255,.98)}
+.place-detail-popup-head:before{content:"";position:absolute;top:6px;left:50%;width:40px;height:4px;transform:translateX(-50%);border-radius:99px;background:#c6cec9}
+.place-detail-popup-head>div{min-width:0;padding-top:8px}.place-detail-popup-head small,.place-detail-popup-head b{display:block}.place-detail-popup-head small{color:var(--green);font-size:10px;font-weight:800}.place-detail-popup-head b{margin-top:3px;overflow:hidden;font-size:17px;text-overflow:ellipsis;white-space:nowrap}
+.place-detail-popup-head button{flex:0 0 42px;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--mint-low);color:var(--ink)}
+.place-detail-popup-scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:14px 16px calc(24px + env(safe-area-inset-bottom))}
+.place-detail-popup .selected-place-photo{height:220px}.place-detail-popup .selected-place{margin-top:0}
+.guide-volume-badge{position:absolute;z-index:3;top:13px;right:14px;min-width:36px;height:28px;display:grid;place-items:center;padding:0 8px;border-radius:999px;background:var(--green);color:#fff;font-size:10px;font-weight:900;box-shadow:0 3px 10px rgba(0,81,68,.15)}
+.guide-book-page{background:linear-gradient(180deg,#fff 0,#f9fffb 100%)}
+.guide-chapter-intro{margin:12px 0 0;padding:10px 12px;border-left:4px solid var(--green);border-radius:0 10px 10px 0;background:var(--mint-low);color:#4e5b55;font-size:9px;line-height:1.5}
+.guide-shopping-page .guide-volume-badge{background:#b36178}.guide-shopping-page .guide-page-title{border-bottom-color:#b36178}
+.guide-evening-page .guide-volume-badge{background:var(--purple)}.guide-evening-page .guide-page-title{border-bottom-color:var(--purple)}
+.guide-group>h3{display:flex;align-items:center;justify-content:space-between}.guide-group>h3 span{font-size:11px}.guide-group>h3 small{color:rgba(255,255,255,.88);font-size:7px}
+.guide-group article>i{display:block;margin-top:3px;overflow:hidden;color:#66736d;font-size:7px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.guide-group article>footer{margin-top:6px;padding:6px;border-radius:6px;background:var(--mint-low);color:var(--green);font-size:7px;line-height:1.4}
+@media(max-width:760px){
+  .place-detail-popup .selected-place-photo{height:190px}
+  .guide-volume-badge{top:9px;right:10px}
+  .guide-book-page .guide-page-title{padding-right:48px}
+  .guide-chapter-intro{font-size:11px}
+  .guide-group>h3 span{font-size:13px}
+  .guide-group>h3 small,.guide-group article>i,.guide-group article>footer{font-size:9px}
+}

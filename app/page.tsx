@@ -268,6 +268,7 @@ export default function Home() {
   const [mapsKey, setMapsKey] = useState("");
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
+  const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
   const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
@@ -486,6 +487,7 @@ export default function Home() {
           setSelected(point);
           setSheet("places");
           setSheetCollapsed(false);
+          setPlaceDetailOpen(true);
           void localizePointNames([point]).then(([localized])=>{
             if (!localized) return;
             setPlaceResults((current)=>current.map((item)=>item.id===localized.id?localized:item));
@@ -526,6 +528,7 @@ export default function Home() {
         setSelected(point);
         setSheet("places");
         setSheetCollapsed(false);
+        setPlaceDetailOpen(true);
         mapRef.current.panTo({ lat:point.lat, lng:point.lng });
       });
       markerLayerRef.current.push(marker);
@@ -1248,7 +1251,7 @@ export default function Home() {
         <button className={guideOpen ? "active" : ""} onClick={()=>void openAiGuidebook()}><BookOpen size={19}/><span>AI 가이드북</span></button>
       </nav>
 
-      <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
+      <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""} ${placeDetailOpen ? "detail-open" : ""}`}>
         <button className="sheet-toggle" onClick={() => setSheetCollapsed((value) => !value)} aria-label={sheetCollapsed ? "패널 펼치기" : "패널 접기"}>
           <span className="sheet-handle"/>
         </button>
@@ -1268,7 +1271,7 @@ export default function Home() {
             <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
-                return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
+                return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
                   {spot.photoUrl ? <img src={spot.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span>}
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}</small>
@@ -1281,6 +1284,10 @@ export default function Home() {
                 </button>;
               })}
             </div>
+            {placeDetailOpen && <div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
+              <section className="place-detail-popup" onPointerDown={(event)=>event.stopPropagation()}>
+                <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{selected.name}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
+                <div className="place-detail-popup-scroll">
             {selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
             <div className="selected-place" style={{"--place-color":pointColor(selected)} as React.CSSProperties}>
               <span className="place-dot" style={{background:pointColor(selected)}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
@@ -1304,7 +1311,7 @@ export default function Home() {
               </div>
             </div>
             <div className="place-actions">
-              <button onClick={() => { setDestinationId(selected.id); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
+              <button onClick={() => { setDestinationId(selected.id); setPlaceDetailOpen(false); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
               <button className={`save-action ${savedPlaces.some((item) => item.id === selected.id) ? "saved" : ""}`} onClick={() => toggleSavedPlace(selected)} aria-label="장소 저장">
                 <Heart size={16} fill={savedPlaces.some((item) => item.id === selected.id) ? "currentColor" : "none"}/>
               </button>
@@ -1327,6 +1334,9 @@ export default function Home() {
               <p className="place-move-note">도보·차량·대중교통 이동시간은 ‘여기까지 길찾기’에서 현재 출발지를 기준으로 확인할 수 있어요.</p>
               {selected.aiEvidence&&<p className="ai-evidence">정보 근거 · {selected.aiEvidence}</p>}
               <small className="ai-disclaimer">AI가 Google 장소 후보와 등록한 여행 구성으로 만든 추천 정보예요. 가격·메뉴·영업시간은 방문 전에 확인해 주세요.</small>
+            </div>}
+                </div>
+              </section>
             </div>}
           </>
         )}
@@ -1351,7 +1361,7 @@ export default function Home() {
             <div className="google-results">
               {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
-                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
+                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");setPlaceDetailOpen(true);mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
                     <MapPin size={17} style={{color:pointColor(point)}}/><span><b>{point.name}</b>{point.originalName && <em>{point.originalName}</em>}<small>{point.sub}</small></span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
@@ -1517,8 +1527,26 @@ export default function Home() {
                 const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} 일본`;
                 const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
+                const renderGuideGroups = (groups:string[]) => groups.map((group) => {
+                  const items = guidePlaces.filter((point)=>guideGroup(point)===group).slice(0,8);
+                  if (!items.length) return null;
+                  return <section className="guide-group" key={group} style={{"--group-color":categoryColors[group as Category]} as React.CSSProperties}>
+                    <h3><span>{group}</span><small>{items.length}곳 추천</small></h3>
+                    <div>{items.map((point,index)=><article key={point.id} style={{borderTop:`3px solid ${pointColor(point)}`}}>
+                      {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
+                      <b>{index+1}. {point.name}</b>
+                      {point.originalName&&<i>{point.originalName}</i>}
+                      <small>{point.hours || "방문 전 운영시간 확인"}</small>
+                      <p>{point.aiReason || point.description}</p>
+                      <em>{["맛집","카페","디저트","이자카야·술집"].includes(group) ? "추천 메뉴" : ["쇼핑","소품샵","전통시장","주류"].includes(group) ? "추천 상품" : "추천 포인트"} · {point.aiRecommendedItems?.map((item)=>`${item.name} ${item.price}`).join(" · ") || point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
+                      <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || group)}</em>
+                      {point.aiFamilyTip&&<footer>가족 팁 · {point.aiFamilyTip}</footer>}
+                    </article>)}</div>
+                  </section>;
+                });
                 return <>
                   <article className="guide-page guide-cover">
+                    <span className="guide-volume-badge">01</span>
                     <div className="guide-title"><div><small>AI FAMILY TRAVEL GUIDE</small><h2>{aiGuidePlan.title || `${travelArea} 여행 지도`}</h2><p>{aiGuidePlan.overview}</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
                     <div className="guide-map-board">
                       {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
@@ -1529,6 +1557,7 @@ export default function Home() {
                   </article>
 
                   <article className="guide-page ai-itinerary-page">
+                    <span className="guide-volume-badge">02</span>
                     <div className="guide-page-title"><small>AI PERSONALIZED ITINERARY</small><h2>우리 가족 맞춤 일정</h2><span>{dateText}</span></div>
                     <div className="ai-day-list">
                       {aiGuidePlan.days.map((day)=><section key={day.day}><h3><span>DAY {day.day}</span>{day.title}</h3><div>{day.stops.map((stop,index)=>{
@@ -1540,6 +1569,7 @@ export default function Home() {
                   </article>
 
                   <article className="guide-page">
+                    <span className="guide-volume-badge">02-B</span>
                     <div className="guide-page-title"><small>CITY ROUTE & SPOT GUIDE</small><h2>{travelArea || "일본"} 추천 동선</h2><span>{dateText}</span></div>
                     <div className="route-ribbon">
                       {hotel && <div><Building2/><b>{hotel.name}</b></div>}
@@ -1561,6 +1591,7 @@ export default function Home() {
                   </article>
 
                   <article id="guide-transit-map" className="guide-page guide-transit-page">
+                    <span className="guide-volume-badge">교통 부록</span>
                     <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·기차 노선도</h2><span>{dateText}</span></div>
                     <p className="transit-intro">{hasSubwayArea ? `여행 동선과 관계없이 ${travelArea}에서 이용할 수 있는 주요 도시철도·지하철·기차 노선과 핵심 역을 정리했습니다.` : "등록된 도시철도 노선 정보가 없는 지역입니다. 현지 철도와 버스 노선은 Google 지도에서 확인해 주세요."}</p>
                     {hasSubwayArea ? <div className="subway-diagram">
@@ -1572,18 +1603,25 @@ export default function Home() {
                     <div className="transit-tips"><b>교통 이용 팁</b><span>교통카드를 사용하면 환승과 결제가 편리해요.</span><span>아이와 할머니가 함께 이동할 때는 엘리베이터 출구를 먼저 확인하세요.</span><span>정확한 막차와 운행 변경 정보는 방문 당일 확인해 주세요.</span></div>
                   </article>
 
-                  <article className="guide-page guide-food-page">
-                    <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
-                    {["관광","맛집","카페","디저트","쇼핑","소품샵","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"].map((group) => {
-                      const items = guidePlaces.filter((point)=>guideGroup(point)===group);
-                      if (!items.length) return null;
-                      return <section className="guide-group" key={group} style={{"--group-color":categoryColors[group as Category]} as React.CSSProperties}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id} style={{borderTop:`3px solid ${pointColor(point)}`}}>
-                        {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
-                        <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.aiReason || point.description}</p>
-                        <em>{group==="맛집"||group==="카페"||group==="디저트" ? "추천 메뉴" : "추천 포인트"} · {point.aiRecommendedItems?.map((item)=>`${item.name} ${item.price}`).join(" · ") || point.aiFamousItems?.join(" · ") || point.recommendedMenu || "현지 인기 항목은 방문 전 확인"}</em>
-                        <em>예상 가격 · {point.aiPrice || priceGuideFor(point.placeType || group)}</em>
-                      </article>)}</div></section>;
-                    })}
+                  <article className="guide-page guide-food-page guide-book-page">
+                    <span className="guide-volume-badge">03</span>
+                    <div className="guide-page-title"><small>LOCAL FOOD GUIDE</small><h2>{travelArea || "일본"} 현지인 맛집</h2><span>{dateText}</span></div>
+                    <p className="guide-chapter-intro">가족과 함께 방문하기 좋은 현지 식당, 카페, 디저트와 대표 메뉴·예상 가격을 모았습니다.</p>
+                    {renderGuideGroups(["맛집","카페","디저트"])}
+                  </article>
+
+                  <article className="guide-page guide-shopping-page guide-book-page">
+                    <span className="guide-volume-badge">04</span>
+                    <div className="guide-page-title"><small>SHOPPING & SOUVENIR GUIDE</small><h2>{travelArea || "일본"} 쇼핑 리스트</h2><span>{dateText}</span></div>
+                    <p className="guide-chapter-intro">기념품, 지역 공예품, 소품과 시장 먹거리를 카테고리별로 확인하세요.</p>
+                    {renderGuideGroups(["쇼핑","소품샵","전통시장"])}
+                  </article>
+
+                  <article className="guide-page guide-evening-page guide-book-page">
+                    <span className="guide-volume-badge">05</span>
+                    <div className="guide-page-title"><small>SAKE, IZAKAYA & RELAX GUIDE</small><h2>{travelArea || "일본"} 주류·저녁·휴식</h2><span>{dateText}</span></div>
+                    <p className="guide-chapter-intro">사케와 지역 주류, 가족 식사 가능한 이자카야, 여행 후 쉬기 좋은 온천·휴식 장소입니다.</p>
+                    {renderGuideGroups(["주류","이자카야·술집","온천·휴식"])}
                     <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
                   </article>
                 </>;
