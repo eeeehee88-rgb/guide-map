@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
-type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "소품샵" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사" | "숙박" | "교통";
+type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "편의점" | "소품샵" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사" | "숙박" | "교통";
 type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
@@ -59,10 +59,10 @@ const station: Point = {
   lat:35.3802772, lng:136.9457636, color:"#3f6bb1", hours:"", description:"여행의 기본 출발점", tip:"", query:"犬山駅"
 };
 
-const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","소품샵","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"];
+const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"];
 const categoryColors: Record<Category,string> = {
   "전체":"#247565","관광":"#275fbd","맛집":"#ef6a4c","카페":"#c56892","디저트":"#d36a9a",
-  "쇼핑":"#e54473","소품샵":"#93701f","전통시장":"#d88b24","주류":"#8052a5","이자카야·술집":"#a65068",
+  "쇼핑":"#e54473","편의점":"#168a55","소품샵":"#93701f","전통시장":"#d88b24","주류":"#8052a5","이자카야·술집":"#a65068",
   "온천·휴식":"#6b55b5","아이와 함께":"#2e9b78","역사":"#247565","숙박":"#7a5caf","교통":"#3f6bb1"
 };
 
@@ -212,11 +212,12 @@ function googlePlaceDetails(place:any, fallbackName:string) {
 function guideGroup(point:Point) {
   if (point.category !== "검색") return point.category;
   const type = point.placeType || "";
-  if (["관광","맛집","카페","쇼핑","소품샵","주류","이자카야·술집","온천·휴식","디저트","전통시장","아이와 함께"].includes(type)) return type;
+  if (["관광","맛집","카페","쇼핑","편의점","소품샵","주류","이자카야·술집","온천·휴식","디저트","전통시장","아이와 함께"].includes(type)) return type;
   if (/식당|음식|라멘|요리|레스토랑|스시|우동|소바|돈카츠/.test(type)) return "맛집";
   if (/카페|커피|디저트|제과|베이커리/.test(type)) return "카페";
   if (/소품|잡화|기념품|공예|편집숍/.test(type)) return "소품샵";
-  if (/쇼핑|백화점|상점|시장|편의점|마트|슈퍼|약국|드럭스토어/.test(type)) return "쇼핑";
+  if (/편의점|convenience/i.test(type)) return "편의점";
+  if (/쇼핑|백화점|상점|시장|마트|슈퍼|약국|드럭스토어/.test(type)) return "쇼핑";
   if (/주류|술|사케|와인/.test(type)) return "주류";
   if (/이자카야|바$|나이트클럽|술집|펍/.test(type)) return "이자카야·술집";
   if (/온천|스파|목욕/.test(type)) return "온천·휴식";
@@ -253,6 +254,7 @@ function priceGuideFor(type:string) {
   if (type === "카페" || type === "디저트") return "약 ¥500~1,500 / 1인";
   if (type === "이자카야·술집") return "약 ¥2,000~4,500 / 1인";
   if (type === "주류") return "약 ¥800~3,000 / 상품";
+  if (type === "편의점") return "약 ¥100~1,000 / 상품";
   if (type === "쇼핑" || type === "소품샵" || type === "전통시장") return "상품별 가격 상이";
   if (type === "온천·휴식") return "약 ¥800~2,500 / 1인";
   if (type === "숙박") return "객실 유형과 날짜에 따라 상이";
@@ -392,7 +394,7 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = () => `ai-trip-guide-v9:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v10:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -470,7 +472,7 @@ export default function Home() {
   useEffect(()=>{
     if (!placeDetailOpen || !selected.detailLoaded || !selected.googlePlaceId || selected.detailAiLoaded) return;
     const group=guideGroup(selected);
-    if (!["맛집","카페","디저트","쇼핑","소품샵","전통시장","주류","이자카야·술집"].includes(group)) return;
+    if (!["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"].includes(group)) return;
     let cancelled=false;
     const applyInsight=(detail:any)=>{
       if (cancelled) return;
@@ -714,7 +716,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces, ...routeSearchPoints]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...combinedPlacePool.filter(isPointInCurrentArea), ...regionalPlaceResults, ...regionalSavedPlaces, ...routeSearchPoints]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const isCurrentLocation = point.id === "current-location";
@@ -951,6 +953,7 @@ export default function Home() {
         { label:"맛집", query:"현지인 인기 맛집", color:"#ef6a4c" },
         { label:"카페", query:"인기 카페 디저트", color:"#c56892" },
         { label:"쇼핑", query:"쇼핑 백화점 대형 할인점 드럭스토어", color:"#e54473" },
+        { label:"편의점", query:"편의점", color:"#168a55" },
         { label:"소품샵", query:"잡화점 소품샵 기념품 공예 편집숍", color:"#93701f" },
         { label:"주류", query:"사케 위스키 주류 전문점", color:"#8052a5" },
         { label:"이자카야·술집", query:"현지인 이자카야 술집", color:"#a65068" },
@@ -960,13 +963,15 @@ export default function Home() {
         { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
       ];
       const batches = await Promise.allSettled(types.map(async (type) => {
+        const resultLimit=type.label==="편의점"?20:10;
+        const keepLimit=type.label==="편의점"?20:5;
         const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
         const { places:localPlaces } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
           fields,
           locationRestriction:bounds,
           language:"ko",
-          maxResultCount:10
+          maxResultCount:resultLimit
         });
         const nearbyLocal = localPlaces.filter((place:any)=>{
           if (!place.location || !bounds.contains(place.location)) return false;
@@ -982,7 +987,7 @@ export default function Home() {
             fields,
             locationBias:{center:{lat:centerLat,lng:centerLng},radius:30000},
             language:"ko",
-            maxResultCount:10
+            maxResultCount:resultLimit
           });
           places = [...nearbyLocal,...expandedPlaces.filter((place:any)=>{
             if (!place.location) return false;
@@ -992,7 +997,7 @@ export default function Home() {
             ) <= 30;
           })].filter((place:any,index:number,items:any[])=>items.findIndex((item:any)=>item.id===place.id)===index);
         }
-        return places.slice(0,5).map((place:any,index:number) => {
+        return places.slice(0,keepLimit).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
@@ -1057,9 +1062,11 @@ export default function Home() {
         categoryCandidates[shoppingIndex]=[...priorityShopping,...categoryCandidates[shoppingIndex]]
           .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
       }
-      const candidates = [0,1,2,3,4].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean))
+      const convenienceIndex=types.findIndex(type=>type.label==="편의점");
+      const allConvenience=convenienceIndex>=0?categoryCandidates[convenienceIndex]:[];
+      const candidates = [[0,1,2,3,4].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean)),allConvenience].flat()
         .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index)
-        .slice(0,60);
+        .slice(0,80);
       if (!candidates.length) throw new Error();
       fallbackPoints = candidates.map((point)=>({
         ...point,
@@ -1540,7 +1547,8 @@ export default function Home() {
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
                     <b>{spot.name}</b>
                     {spot.originalName&&<em>{spot.originalName}</em>}
-                    <p>{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
+                    <p className="recommendation-summary">{spot.description}</p>
+                    <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
                     <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
                   </div>
                   <Navigation size={18}/>
@@ -1623,7 +1631,7 @@ export default function Home() {
               <p className="ai-summary">{selected.aiReason}</p>
               {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "대표 메뉴" : guideGroup(selected)==="쇼핑" ? "추천 쇼핑" : "추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
               {!selected.detailAiLoaded&&selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<div className="ai-item-list">
-                <b>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected)) ? "추천 메뉴와 가격" : ["쇼핑","소품샵","주류","전통시장"].includes(guideGroup(selected)) ? "추천 상품과 가격" : "추천 항목과 가격"}</b>
+                <b>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected)) ? "추천 메뉴와 가격" : ["쇼핑","편의점","소품샵","주류","전통시장"].includes(guideGroup(selected)) ? "추천 상품과 가격" : "추천 항목과 가격"}</b>
                 <div>{selected.aiRecommendedItems.map((item,index)=><p key={`${item.name}-${index}`}><span>{item.name}</span><strong>{item.price}</strong></p>)}</div>
               </div>}
               <div className="ai-tip-grid">
@@ -1924,7 +1932,7 @@ export default function Home() {
                     <span className="guide-volume-badge">04</span>
                     <div className="guide-page-title"><small>SHOPPING & SOUVENIR GUIDE</small><h2>{travelArea || "일본"} 쇼핑 리스트</h2><span>{dateText}</span></div>
                     <p className="guide-chapter-intro">기념품, 지역 공예품, 소품과 시장 먹거리를 카테고리별로 확인하세요.</p>
-                    {renderGuideGroups(["쇼핑","소품샵","전통시장"])}
+                    {renderGuideGroups(["쇼핑","편의점","소품샵","전통시장"])}
                   </article>
 
                   <article className="guide-page guide-evening-page guide-book-page">
