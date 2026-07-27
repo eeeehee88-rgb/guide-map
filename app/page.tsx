@@ -44,9 +44,9 @@ function distanceText(km: number) {
 export default function Home() {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markerLayerRef = useRef<any>(null);
+  const markerLayerRef = useRef<any[]>([]);
   const routeLayerRef = useRef<any>(null);
-  const [Lmod, setLmod] = useState<any>(null);
+  const [googleReady, setGoogleReady] = useState(false);
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
   const [sheet, setSheet] = useState<"places" | "route" | "hotel">("places");
@@ -78,50 +78,80 @@ export default function Home() {
         setOriginId("hotel");
       } catch {}
     }
-    import("leaflet").then((L) => {
-      if (!mapEl.current || mapRef.current) return;
-      setLmod(L);
-      const map = L.map(mapEl.current, { zoomControl:false, attributionControl:false }).setView([35.3845, 136.9417], 15);
-      mapRef.current = map;
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png", {
-        subdomains:"abcd", maxZoom:20
-      }).addTo(map);
-      L.control.zoom({ position:"topright" }).addTo(map);
-    });
+    const loadGoogle = async () => {
+      if ((window as any).google?.maps) {
+        setGoogleReady(true);
+        return;
+      }
+      const response = await fetch("/api/maps-key");
+      const { key } = await response.json();
+      if (!key) {
+        setRouteError("Google 지도 키를 불러오지 못했어요.");
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        const callback = `initInuyamaMap${Date.now()}`;
+        (window as any)[callback] = () => {
+          delete (window as any)[callback];
+          resolve();
+        };
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=ko&region=KR&v=weekly&callback=${callback}`;
+        script.async = true;
+        script.onerror = () => reject(new Error("Google Maps load failed"));
+        document.head.appendChild(script);
+      });
+      setGoogleReady(true);
+    };
+    loadGoogle().catch(() => setRouteError("Google 지도를 불러오지 못했어요. Demo Key 할당량과 허용 설정을 확인해 주세요."));
   }, []);
 
   useEffect(() => {
-    if (!Lmod || !mapRef.current) return;
-    markerLayerRef.current?.remove();
-    const layer = Lmod.layerGroup().addTo(mapRef.current);
-    markerLayerRef.current = layer;
-    const labels = [
-      { name:"이누야마역", lat:35.3802772, lng:136.9457636 },
-      { name:"이누야마 성하마을", lat:35.3842, lng:136.9410 },
-      { name:"기소강", lat:35.3910, lng:136.9410 },
-      { name:"이누야마성", lat:35.38865, lng:136.93785 },
-      { name:"이누야마유엔역", lat:35.39055, lng:136.94670 }
-    ];
-    labels.forEach((label) => {
-      Lmod.marker([label.lat, label.lng], {
-        interactive:false,
-        icon:Lmod.divIcon({ className:"korean-map-label", html:`<span>${label.name}</span>`, iconSize:[130,24], iconAnchor:[65,12] })
-      }).addTo(layer);
-    });
-    [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots].forEach((point) => {
-      const icon = Lmod.divIcon({
-        className:"pin-shell",
-        html:`<button class="mobile-pin ${selected.id === point.id ? "active" : ""}" style="--pin:${point.color}">${point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2)}</button>`,
-        iconSize:[54,42], iconAnchor:[27,38]
+    const google = (window as any).google;
+    if (!googleReady || !mapEl.current || !google?.maps) return;
+    if (!mapRef.current) {
+      mapRef.current = new google.maps.Map(mapEl.current, {
+        center:{ lat:35.3845, lng:136.9417 },
+        zoom:15,
+        mapTypeControl:false,
+        streetViewControl:false,
+        fullscreenControl:false,
+        zoomControl:true,
+        gestureHandling:"greedy",
+        clickableIcons:true
       });
-      const marker = Lmod.marker([point.lat, point.lng], { icon }).addTo(layer);
-      marker.on("click", () => {
+    }
+    markerLayerRef.current.forEach((marker) => marker.setMap(null));
+    markerLayerRef.current = [];
+    [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots].forEach((point) => {
+      const marker = new google.maps.Marker({
+        map:mapRef.current,
+        position:{ lat:point.lat, lng:point.lng },
+        title:point.name,
+        label:{
+          text:point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2),
+          color:"#ffffff",
+          fontSize:"10px",
+          fontWeight:"800"
+        },
+        icon:{
+          path:google.maps.SymbolPath.CIRCLE,
+          fillColor:point.color,
+          fillOpacity:1,
+          strokeColor:"#ffffff",
+          strokeWeight:selected.id === point.id ? 4 : 3,
+          scale:selected.id === point.id ? 18 : 15
+        },
+        zIndex:selected.id === point.id ? 20 : 10
+      });
+      marker.addListener("click", () => {
         setSelected(point);
         setSheet("places");
-        mapRef.current.panTo([point.lat, point.lng]);
+        mapRef.current.panTo({ lat:point.lat, lng:point.lng });
       });
+      markerLayerRef.current.push(marker);
     });
-  }, [Lmod, category, selected.id, hotel]);
+  }, [googleReady, category, selected.id, hotel]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -135,7 +165,8 @@ export default function Home() {
     setResults([]);
     setHotelQuery("");
     setSheet("route");
-    mapRef.current?.setView([next.lat, next.lng], 16);
+    mapRef.current?.setCenter({lat:next.lat,lng:next.lng});
+    mapRef.current?.setZoom(16);
   };
 
   const searchHotel = async () => {
@@ -165,7 +196,8 @@ export default function Home() {
       localStorage.setItem("inuyama-hotel", JSON.stringify(next));
       setOriginId("hotel");
       setSheet("route");
-      mapRef.current?.setView([next.lat, next.lng], 16);
+      mapRef.current?.setCenter({lat:next.lat,lng:next.lng});
+      mapRef.current?.setZoom(16);
     }, () => setRouteError("위치 권한을 허용하면 현재 위치를 사용할 수 있어요."));
   };
 
@@ -211,21 +243,28 @@ export default function Home() {
   };
 
   const drawRoute = (info: RouteInfo) => {
-    if (!Lmod || !mapRef.current) return;
-    routeLayerRef.current?.remove();
-    routeLayerRef.current = Lmod.polyline(info.coordinates, {
-      color:"#176b5b", weight:6, opacity:.9, dashArray:info.estimated ? "8 8" : undefined,
-      lineCap:"round", lineJoin:"round"
-    }).addTo(mapRef.current);
-    mapRef.current.fitBounds(routeLayerRef.current.getBounds(), { padding:[45,45] });
+    const google = (window as any).google;
+    if (!google?.maps || !mapRef.current) return;
+    routeLayerRef.current?.setMap(null);
+    routeLayerRef.current = new google.maps.Polyline({
+      map:mapRef.current,
+      path:info.coordinates.map(([lat,lng]) => ({lat,lng})),
+      strokeColor:"#176b5b",
+      strokeWeight:6,
+      strokeOpacity:.9
+    });
+    const bounds = new google.maps.LatLngBounds();
+    info.coordinates.forEach(([lat,lng]) => bounds.extend({lat,lng}));
+    mapRef.current.fitBounds(bounds, 45);
   };
 
   const clearRoute = () => {
-    routeLayerRef.current?.remove();
+    routeLayerRef.current?.setMap(null);
     routeLayerRef.current = null;
     setRoute(null);
     setRouteError("");
-    mapRef.current?.setView([35.3845, 136.9417], 15, { animate:true });
+    mapRef.current?.setCenter({lat:35.3845,lng:136.9417});
+    mapRef.current?.setZoom(15);
   };
 
   return (
@@ -273,7 +312,7 @@ export default function Home() {
               <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
             <div className="spot-strip">
-              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo([spot.lat,spot.lng]);}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b><small>{spot.sub}</small></button>)}
+              {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b><small>{spot.sub}</small></button>)}
             </div>
           </>
         )}
