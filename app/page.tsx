@@ -232,6 +232,11 @@ export default function Home() {
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState("");
+  const [routeSearchTarget, setRouteSearchTarget] = useState<"origin" | "destination">("destination");
+  const [routeSearchQuery, setRouteSearchQuery] = useState("");
+  const [routeSearching, setRouteSearching] = useState(false);
+  const [routeSearchResults, setRouteSearchResults] = useState<Point[]>([]);
+  const [routeSearchPoints, setRouteSearchPoints] = useState<Point[]>([]);
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeSearching, setPlaceSearching] = useState(false);
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
@@ -252,7 +257,7 @@ export default function Home() {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
     color:"#7a5caf", hours:"", description:"내가 등록한 숙소", tip:"", query:hotel.address
   } : null;
-  const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
+  const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations, ...routeSearchPoints];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
   const isPointInCurrentArea = (point:{lat:number;lng:number}) => {
@@ -405,7 +410,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces, ...routeSearchPoints]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const isCurrentLocation = point.id === "current-location";
@@ -437,7 +442,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea, routeSearchPoints]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -691,6 +696,53 @@ export default function Home() {
 
   const useCurrentLocation = () => {
     updateCurrentLocation(true, true);
+  };
+
+  const searchRoutePlaces = async () => {
+    if (!routeSearchQuery.trim()) return;
+    setRouteSearching(true);
+    setRouteSearchResults([]);
+    setRouteError("");
+    try {
+      const google = (window as any).google;
+      const { Place } = await google.maps.importLibrary("places");
+      const center = mapRef.current?.getCenter();
+      const { places } = await Place.searchByText({
+        textQuery:`${routeSearchQuery.trim()} 일본`,
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName"],
+        ...(center ? { locationBias:{ center, radius:50000 } } : {}),
+        language:"ko",
+        maxResultCount:8
+      });
+      const next:Point[] = places.filter((place:any)=>place.location).map((place:any,index:number)=>{
+        const details = googlePlaceDetails(place, `검색 장소 ${index+1}`);
+        return {
+          id:`route-${place.id}`, name:details.name, sub:details.address, category:"검색",
+          lat:place.location.lat(), lng:place.location.lng(), color:"#6a57a5",
+          hours:"", description:"길찾기를 위해 직접 검색한 장소입니다.", tip:"",
+          query:place.googleMapsURI || place.displayName || "",
+          placeType:details.placeType, originalName:details.originalName, originalAddress:details.originalAddress
+        };
+      });
+      setRouteSearchResults(next);
+      if (!next.length) setRouteError("일본 내에서 검색 결과를 찾지 못했어요. 지역명과 장소명을 함께 입력해 보세요.");
+    } catch {
+      setRouteError("길찾기 장소 검색에 실패했어요. 장소명이나 주소를 다시 확인해 주세요.");
+    } finally {
+      setRouteSearching(false);
+    }
+  };
+
+  const chooseRouteSearchPlace = (point:Point) => {
+    setRouteSearchPoints((current)=>current.some((item)=>item.id===point.id) ? current : [...current,point]);
+    if (routeSearchTarget === "origin") setOriginId(point.id);
+    else setDestinationId(point.id);
+    setRouteSearchResults([]);
+    setRouteSearchQuery("");
+    setRoute(null);
+    routeLayerRef.current?.setMap(null);
+    routeLayerRef.current = null;
+    mapRef.current?.panTo({lat:point.lat,lng:point.lng});
   };
 
   const calculateFallback = (a: Point, b: Point): RouteInfo => {
@@ -961,10 +1013,25 @@ export default function Home() {
               <button className={mode==="drive"?"active":""} onClick={()=>setMode("drive")}><Car size={17}/>자동차</button>
               <button className={mode==="transit"?"active":""} onClick={()=>setMode("transit")}><TrainFront size={17}/>대중교통</button>
             </div>
+            <div className="route-place-search">
+              <div className="route-search-target">
+                <button className={routeSearchTarget==="origin"?"active":""} onClick={()=>setRouteSearchTarget("origin")}>출발지 검색</button>
+                <button className={routeSearchTarget==="destination"?"active":""} onClick={()=>setRouteSearchTarget("destination")}>도착지 검색</button>
+              </div>
+              <div className="route-search-input">
+                <Search size={17}/>
+                <input value={routeSearchQuery} onChange={(e)=>setRouteSearchQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchRoutePlaces()} placeholder="지역명 + 장소명 또는 주소"/>
+                <button onClick={searchRoutePlaces}>{routeSearching ? "검색 중" : "검색"}</button>
+              </div>
+              {routeSearchResults.length > 0 && <div className="route-search-results">
+                {routeSearchResults.map((point)=><button key={point.id} onClick={()=>chooseRouteSearchPlace(point)}><MapPin size={15}/><span><b>{point.name}</b>{point.originalName&&<em>{point.originalName}</em>}<small>{point.sub}</small></span></button>)}
+              </div>}
+              <small className="route-search-help">현재 여행 지역과 관계없이 일본 전역의 장소를 검색할 수 있어요.</small>
+            </div>
             <div className="route-selects">
-              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{routeSearchPoints.map((p)=><option key={`route-from-${p.id}`} value={p.id}>직접 검색 · {p.name}</option>)}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
               <div className="route-line"/>
-              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{routeSearchPoints.map((p)=><option key={`route-to-${p.id}`} value={p.id}>직접 검색 · {p.name}</option>)}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
             </div>
             <button className="calculate-button" onClick={getRoute} disabled={routeLoading}>{routeLoading ? "경로 계산 중…" : <><Navigation size={18}/> 이동시간 계산하기</>}</button>
             <a className="navigation-start" href={googleNavigationUrl()} target="_blank" rel="noreferrer"><Navigation size={18}/>Google 지도에서 {mode === "transit" ? "대중교통 경로" : "내비게이션"} 열기</a>
