@@ -705,7 +705,14 @@ export default function Home() {
   };
 
   return (
-    <main className="mobile-app">
+    <main
+      className="mobile-app"
+      onPointerDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest(".bottom-sheet, .bottom-tabs, .guide-overlay")) return;
+        setSheetCollapsed(true);
+      }}
+    >
       <header className="mobile-header">
         <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>오늘 어디로 갈까요?</h1></div>
         <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
