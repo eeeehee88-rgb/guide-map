@@ -13,7 +13,7 @@ type Point = {
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
   originalName?: string; originalAddress?: string;
-  reviews?: string[];
+  aiReason?: string; aiPrice?: string; aiFamousItems?: string[]; aiFamilyTip?: string; aiBestTime?: string;
   photoUrl?: string;
   recommendedMenu?: string;
 };
@@ -23,9 +23,10 @@ type TripProfile = { travelers:Traveler[]; startDate:string; endDate:string };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
 type TransitStep = { instruction:string; line?:string; vehicle?:string; departure?:string; arrival?:string; stops?:number; minutes:number };
 type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean; transitSteps?:TransitStep[]; transfers?:number };
-type AiPlaceAnalysis = {
-  summary:string; famousItems:string[]; familyFit:string; childTip:string; seniorTip:string;
-  priceGuide:string; waitTip:string; cautions:string[]; confidence:"높음"|"보통"|"낮음"; evidence:string[];
+type AiGuidePlan = {
+  title:string; overview:string;
+  days:{day:number;title:string;stops:{id:string;time:string;reason:string}[];tips:string[]}[];
+  familyTips:string[]; weatherBackup:string[];
 };
 
 const spots: Point[] = [
@@ -261,9 +262,9 @@ export default function Home() {
     {id:"child-5",relation:"여아",age:"5"}
   ]);
   const [tripSaved, setTripSaved] = useState(false);
-  const [aiAnalyses, setAiAnalyses] = useState<Record<string,AiPlaceAnalysis>>({});
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState("");
+  const [aiOverview, setAiOverview] = useState("");
+  const [aiGuidePlan, setAiGuidePlan] = useState<AiGuidePlan | null>(null);
+  const [aiGuideLoading, setAiGuideLoading] = useState(false);
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
@@ -346,10 +347,6 @@ export default function Home() {
         if (parsed.endDate) setGuideEnd(parsed.endDate);
         setTripSaved(true);
       } catch {}
-    }
-    const savedAi = localStorage.getItem("family-trip-ai-place-cache");
-    if (savedAi) {
-      try { setAiAnalyses(JSON.parse(savedAi)); } catch {}
     }
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
@@ -657,17 +654,56 @@ export default function Home() {
           };
         });
       }));
-      const next = batches.flatMap((batch) => batch.status === "fulfilled" ? batch.value : [])
+      const candidates = batches.flatMap((batch) => batch.status === "fulfilled" ? batch.value : [])
         .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
+      if (!candidates.length) throw new Error();
+      const aiResponse = await fetch("/api/ai-recommend",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          trip:{
+            area:travelArea.trim(), startDate:guideStart, endDate:guideEnd,
+            duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
+            travelers:travelers.map(({relation,age})=>({relation,age}))
+          },
+          candidates:candidates.map((point)=>({
+            id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
+            address:point.sub,rating:point.rating,reviewCount:point.reviewCount,
+            description:point.description,recommendedMenu:point.recommendedMenu
+          }))
+        })
+      });
+      const aiData = await aiResponse.json();
+      if (!aiResponse.ok || !Array.isArray(aiData.result?.recommendations)) throw new Error(aiData.error || "AI 추천 실패");
+      const recommendationMap = new Map(aiData.result.recommendations.map((item:any)=>[item.id,item]));
+      const next = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
+        const ai:any = recommendationMap.get(point.id);
+        return {
+          ...point,
+          aiReason:ai.reason,
+          aiPrice:ai.priceGuide,
+          aiFamousItems:Array.isArray(ai.famousItems) ? ai.famousItems : [],
+          aiFamilyTip:ai.familyTip,
+          aiBestTime:ai.bestTime,
+          tip:ai.familyTip || point.tip,
+          recommendedMenu:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems.join(" · ") : point.recommendedMenu
+        };
+      }).sort((a,b)=>{
+        const pa:any=recommendationMap.get(a.id), pb:any=recommendationMap.get(b.id);
+        return Number(pa?.priority||99)-Number(pb?.priority||99);
+      });
       if (!next.length) throw new Error();
+      setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
       setSelected(next[0]);
       setDestinationId(next[0].id);
       routeLayerRef.current?.setMap(null);
       routeLayerRef.current = null;
       setRoute(null);
-    } catch {
-      setRouteError("지역 추천 정보를 만들지 못했어요. Google Places 할당량을 확인한 뒤 다시 시도해 주세요.");
+      return next;
+    } catch (error:any) {
+      setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+      return [] as Point[];
     } finally {
       setGuideLoading(false);
     }
@@ -931,53 +967,41 @@ export default function Home() {
     setTripSaved(true);
     setRouteError("");
     setSheet("places");
+    setSheetCollapsed(false);
+    setTimeout(()=>void buildAreaGuide(),0);
   };
 
-  const analyzeSelectedPlace = async () => {
-    setAiLoading(true);
-    setAiError("");
+  const openAiGuidebook = async () => {
+    setGuideOpen(true);
+    setAiGuideLoading(true);
+    setRouteError("");
     try {
-      let reviews = selected.reviews || [];
-      try {
-        const google = (window as any).google;
-        const { Place } = await google.maps.importLibrary("places");
-        const { places } = await Place.searchByText({
-          textQuery:`${selected.originalName || selected.name} ${selected.sub}`,
-          fields:["id","displayName","formattedAddress","reviews","editorialSummary"],
-          language:"ko",
-          maxResultCount:1
-        });
-        const place = places?.[0];
-        reviews = (place?.reviews || []).map((review:any)=>{
-          const text = typeof review.text === "string" ? review.text : review.text?.text;
-          return text ? `${review.rating ? `${review.rating}점 · ` : ""}${text}` : "";
-        }).filter(Boolean);
-      } catch {}
-      const response = await fetch("/api/ai-place",{
+      const places = guideRecommendations.length ? guideRecommendations : await buildAreaGuide();
+      if (!places?.length) throw new Error("먼저 여행 정보 저장 후 AI 추천 장소를 불러와 주세요.");
+      const response = await fetch("/api/ai-guide",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          place:{
-            name:selected.name, originalName:selected.originalName, category:guideGroup(selected),
-            address:selected.sub, description:selected.description, hours:selected.hours,
-            rating:selected.rating, reviews
-          },
           trip:{
-            area:travelArea,
-            dates:tripDays ? `${guideStart}~${guideEnd} (${tripDays.nights}박 ${tripDays.days}일)` : "미등록",
+            area:travelArea,startDate:guideStart,endDate:guideEnd,
+            duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "1일",
             travelers:travelers.map(({relation,age})=>({relation,age}))
-          }
+          },
+          hotel,
+          places:[...regionalSavedPlaces,...places].map((point)=>({
+            id:point.id,name:point.name,category:guideGroup(point),lat:point.lat,lng:point.lng,
+            reason:point.aiReason,price:point.aiPrice,famousItems:point.aiFamousItems,
+            familyTip:point.aiFamilyTip,hours:point.hours
+          }))
         })
       });
       const data = await response.json();
-      if (!response.ok || !data.analysis) throw new Error(data.error || "AI 분석에 실패했어요.");
-      const next = {...aiAnalyses,[selected.id]:data.analysis};
-      setAiAnalyses(next);
-      localStorage.setItem("family-trip-ai-place-cache",JSON.stringify(next));
+      if (!response.ok || !data.guide?.days) throw new Error(data.error || "AI 가이드북을 만들지 못했어요.");
+      setAiGuidePlan(data.guide);
     } catch (error:any) {
-      setAiError(error?.message || "AI 분석을 불러오지 못했어요.");
+      setRouteError(error?.message || "AI 가이드북을 만들지 못했어요.");
     } finally {
-      setAiLoading(false);
+      setAiGuideLoading(false);
     }
   };
 
@@ -1009,7 +1033,7 @@ export default function Home() {
         <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
         <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
         <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
-        <button className={guideOpen ? "active" : ""} onClick={() => setGuideOpen(true)}><BookOpen size={19}/><span>가이드북</span></button>
+        <button className={guideOpen ? "active" : ""} onClick={openAiGuidebook}><BookOpen size={19}/><span>AI 가이드북</span></button>
       </nav>
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""}`}>
@@ -1048,26 +1072,16 @@ export default function Home() {
               </button>
               <a href={selected.query.startsWith("http") ? selected.query : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
-            <button className="ai-analyze-button" onClick={analyzeSelectedPlace} disabled={aiLoading}>
-              <Sparkles size={17}/>{aiLoading ? "DeepSeek가 장소를 분석하는 중…" : aiAnalyses[selected.id] ? "AI 분석 다시 받기" : "AI로 유명 메뉴·가족 팁 분석"}
-            </button>
-            {aiError && <p className="ai-error">{aiError}</p>}
-            {aiAnalyses[selected.id] && (() => {
-              const analysis = aiAnalyses[selected.id];
-              return <div className="ai-place-card">
-                <div className="ai-card-head"><span><Sparkles size={15}/>DeepSeek AI 분석</span><small>근거 신뢰도 {analysis.confidence}</small></div>
-                <p className="ai-summary">{analysis.summary}</p>
-                <div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "유명 메뉴·주문 추천" : "이 장소의 핵심 포인트"}</b><div>{analysis.famousItems?.map((item)=><span key={item}>{item}</span>)}</div></div>
-                <div className="ai-tip-grid">
-                  <div><small>우리 가족 적합도</small><p>{analysis.familyFit}</p></div>
-                  <div><small>아이 동반</small><p>{analysis.childTip}</p></div>
-                  <div><small>할머니 동반</small><p>{analysis.seniorTip}</p></div>
-                  <div><small>가격·대기</small><p>{analysis.priceGuide} · {analysis.waitTip}</p></div>
-                </div>
-                {analysis.cautions?.length>0&&<div className="ai-cautions"><b>확인할 점</b><p>{analysis.cautions.join(" · ")}</p></div>}
-                <small className="ai-disclaimer">Google 장소 정보와 리뷰를 AI가 정리한 참고 정보예요. 메뉴·가격·영업시간은 방문 전에 매장에 확인해 주세요.</small>
-              </div>;
-            })()}
+            {selected.aiReason && <div className="ai-place-card">
+              <div className="ai-card-head"><span><Sparkles size={15}/>AI 가족 맞춤 추천</span>{selected.aiBestTime&&<small>{selected.aiBestTime}</small>}</div>
+              <p className="ai-summary">{selected.aiReason}</p>
+              {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "대표 메뉴" : guideGroup(selected)==="쇼핑" ? "추천 쇼핑" : "추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
+              <div className="ai-tip-grid">
+                <div><small>예상 가격</small><p>{selected.aiPrice || "방문 전 확인"}</p></div>
+                <div><small>가족 방문 팁</small><p>{selected.aiFamilyTip || "방문 전 확인"}</p></div>
+              </div>
+              <small className="ai-disclaimer">AI가 Google 장소 후보와 등록한 여행 구성으로 만든 추천 정보예요. 가격·메뉴·영업시간은 방문 전에 확인해 주세요.</small>
+            </div>}
             <div className="spot-strip">
               {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.sub}</small></button>)}
             </div>
@@ -1122,7 +1136,7 @@ export default function Home() {
               ))}
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
-            <button className="guide-create-button" onClick={() => setGuideOpen(true)}><BookOpen size={17}/> 저장 장소로 가이드북 만들기</button>
+            <button className="guide-create-button" onClick={openAiGuidebook}><Sparkles size={17}/> AI 가이드북 만들기</button>
           </>
         )}
 
@@ -1236,17 +1250,22 @@ export default function Home() {
           </div>
           <div className="guide-scroll">
             <div className="guide-recommend-panel">
-              <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
+              <div><small>등록한 구성원·일정·추천 장소를 모두 반영해요</small><b>AI 가족여행 가이드북</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
-              <button onClick={()=>buildAreaGuide()} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
-              {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
+              <button onClick={openAiGuidebook} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "AI 구성 중…" : <><Sparkles size={16}/>AI 가이드 다시 만들기</>}</button>
+              {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            <div className="travel-guide" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가족 구성과 이동 동선을 분석하고 있어요</b><span>추천 장소, 식사, 쇼핑, 휴식 시간을 조합해 가이드북을 만드는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide" ref={guideRef}>
               {(() => {
-                const guidePlaces = guideRecommendations.length
+                const baseGuidePlaces = guideRecommendations.length
                   ? [...regionalSavedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
                   : regionalSavedPlaces.length ? regionalSavedPlaces : isInuyamaArea ? spots.slice(0,8) : [];
+                const aiStopIds = aiGuidePlan.days.flatMap((day)=>day.stops.map((stop)=>stop.id));
+                const guidePlaces = [...baseGuidePlaces].sort((a,b)=>{
+                  const ai=aiStopIds.indexOf(a.id), bi=aiStopIds.indexOf(b.id);
+                  return (ai<0?999:ai)-(bi<0?999:bi);
+                });
                 const mapPlaces = guidePlaces.slice(0,20);
                 const markerLabels = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
                 const markerParams = mapPlaces.map((point,index) =>
@@ -1257,13 +1276,24 @@ export default function Home() {
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 return <>
                   <article className="guide-page guide-cover">
-                    <div className="guide-title"><div><small>MY FAMILY TRAVEL GUIDE</small><h2>{travelArea || "일본"} 여행 지도</h2><p>저장한 장소를 한눈에 보는 우리 가족 맞춤 가이드</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
+                    <div className="guide-title"><div><small>AI FAMILY TRAVEL GUIDE</small><h2>{aiGuidePlan.title || `${travelArea} 여행 지도`}</h2><p>{aiGuidePlan.overview}</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
                     <div className="guide-map-board">
                       {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
                     </div>
                     <div className="guide-index">
                       {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
                     </div>
+                  </article>
+
+                  <article className="guide-page ai-itinerary-page">
+                    <div className="guide-page-title"><small>AI PERSONALIZED ITINERARY</small><h2>우리 가족 맞춤 일정</h2><span>{dateText}</span></div>
+                    <div className="ai-day-list">
+                      {aiGuidePlan.days.map((day)=><section key={day.day}><h3><span>DAY {day.day}</span>{day.title}</h3><div>{day.stops.map((stop,index)=>{
+                        const point=guidePlaces.find((item)=>item.id===stop.id);
+                        return <article key={`${day.day}-${stop.id}-${index}`}><time>{stop.time}</time><div><b>{point?.name||"추천 장소"}</b><p>{stop.reason}</p></div></article>;
+                      })}</div>{day.tips?.length>0&&<footer>{day.tips.join(" · ")}</footer>}</section>)}
+                    </div>
+                    <div className="ai-guide-tips"><div><b>가족 여행 팁</b><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><b>날씨 대체안</b><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></div>
                   </article>
 
                   <article className="guide-page">
@@ -1278,8 +1308,9 @@ export default function Home() {
                         <div className="guide-card-head" style={{background:point.color}}><span>{index+1}</span><b>{point.name}</b></div>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
-                        <p>{point.description}</p>
+                        <p>{point.aiReason || point.description}</p>
                         {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
+                        {point.aiPrice && <em>예상 가격 · {point.aiPrice}</em>}
                         {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
                         <footer><MapPin size={13}/>{point.sub}</footer>
                       </div>)}
@@ -1305,15 +1336,16 @@ export default function Home() {
                       if (!items.length) return null;
                       return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
-                        <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.description}</p>
+                        <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.aiReason || point.description}</p>
                         {point.recommendedMenu && <em>추천 메뉴 · {point.recommendedMenu}</em>}
+                        {point.aiPrice && <em>예상 가격 · {point.aiPrice}</em>}
                       </article>)}</div></section>;
                     })}
                     <div className="guide-checklist"><h3>가족 여행 체크리스트</h3><p>□ 영업시간·휴무일 재확인</p><p>□ 아이와 할머니의 휴식 장소 확인</p><p>□ 비 오는 날 대체 동선 준비</p><p>□ 렌터카 이용 시 주차장 확인</p></div>
                   </article>
                 </>;
               })()}
-            </div>
+            </div> : <div className="ai-guide-loading"><BookOpen size={30}/><b>AI 가이드북을 만들 준비가 됐어요</b><span>여행 구성과 날짜를 저장한 뒤 다시 시도해 주세요.</span></div>}
           </div>
         </section>
       )}
