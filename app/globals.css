@@ -285,6 +285,22 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .guide-group>h3{display:flex;align-items:center;justify-content:space-between}.guide-group>h3 span{font-size:11px}.guide-group>h3 small{color:rgba(255,255,255,.88);font-size:7px}
 .guide-group article>i{display:block;margin-top:3px;overflow:hidden;color:#66736d;font-size:7px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
 .guide-group article>footer{margin-top:6px;padding:6px;border-radius:6px;background:var(--mint-low);color:var(--green);font-size:7px;line-height:1.4}
+.guide-group{border-color:color-mix(in srgb,var(--group-color) 30%,#dce4df)}
+.guide-group>h3{background:var(--group-color)}
+.guide-group>div{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px;background:#f4f7f5}
+.guide-group article{min-height:0;padding:0 10px 10px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#fff}
+.guide-group article>img{width:calc(100% + 20px);height:100px;margin:0 -10px 9px;object-fit:cover}
+.guide-group article>header{display:flex;align-items:flex-start;gap:7px;margin:0 0 7px}
+.guide-group article>header>span{flex:0 0 20px;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:var(--group-color);color:#fff;font-size:8px;font-weight:900}
+.guide-group article>header>div{min-width:0}.guide-group article>header b{font-size:10px;line-height:1.25}
+.guide-group article>p{min-height:31px;margin:7px 0;font-size:8px;line-height:1.5}
+.guide-action-box{margin-top:8px;padding:8px;border-radius:8px;background:color-mix(in srgb,var(--group-color) 8%,#fff)}
+.guide-action-box>strong{display:block;margin-bottom:5px;color:var(--group-color);font-size:8px}
+.guide-action-box>em{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px dashed color-mix(in srgb,var(--group-color) 25%,#ddd);font-size:7px;font-style:normal;line-height:1.35}
+.guide-action-box>em span{min-width:0}.guide-action-box>em b{flex:0 0 auto;color:#8b5a10;white-space:nowrap}
+.guide-visit-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.guide-visit-meta span{padding:4px 6px;border-radius:999px;background:#f2f5f3;color:#52605a;font-size:7px;font-weight:800}
+.guide-group article>footer{display:grid;gap:3px}.guide-group article>footer span{display:block}
+.guide-sightseeing-page .guide-volume-badge{background:#257457}.guide-sightseeing-page .guide-page-title{border-bottom-color:#257457}
 @media(max-width:760px){
   .place-detail-popup .selected-place-photo{height:190px}
   .guide-volume-badge{top:9px;right:10px}
@@ -292,6 +308,13 @@ button:disabled{cursor:not-allowed;opacity:.58}
   .guide-chapter-intro{font-size:11px}
   .guide-group>h3 span{font-size:13px}
   .guide-group>h3 small,.guide-group article>i,.guide-group article>footer{font-size:9px}
+  .guide-group>div{grid-template-columns:1fr;padding:7px}
+  .guide-group article{padding:0 12px 12px}
+  .guide-group article>img{width:calc(100% + 24px);height:168px;margin:0 -12px 11px}
+  .guide-group article>header>span{width:24px;height:24px;flex-basis:24px;font-size:10px}
+  .guide-group article>header b{font-size:14px}.guide-group article>p{min-height:0;font-size:11px}
+  .guide-action-box{padding:10px}.guide-action-box>strong{font-size:11px}.guide-action-box>em{font-size:10px}
+  .guide-visit-meta span{font-size:9px}
 }
 
 /* Full-screen place detail */
