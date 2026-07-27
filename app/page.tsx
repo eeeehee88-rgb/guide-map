@@ -22,6 +22,8 @@ type Point = {
   googlePlaceId?: string; phone?: string; website?: string; openNow?: boolean;
   weeklyHours?: string[]; reviewSummary?: string; serviceOptions?: string[];
   parkingOptions?: string[]; accessibility?: string[]; detailLoaded?: boolean;
+  photoUrls?: string[]; paymentOptions?: string[]; photosPage?: string; reviewsPage?: string;
+  detailedReviews?: {text:string;rating?:number;author?:string;time?:string}[];
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type Traveler = { id:string; relation:string; age:string };
@@ -115,8 +117,21 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const rating = typeof place.rating === "number" ? place.rating : undefined;
   const reviewCount = typeof place.userRatingCount === "number" ? place.userRatingCount : undefined;
   const openingHours = place.currentOpeningHours || place.regularOpeningHours;
-  const weekday = openingHours?.weekdayDescriptions?.[new Date().getDay()];
+  const now=new Date();
+  const koreanDays=["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
+  const weekday = openingHours?.weekdayDescriptions?.find((item:string)=>item.includes(koreanDays[now.getDay()]))
+    || openingHours?.weekdayDescriptions?.[now.getDay()];
   const hours = koreanPlaceText(weekday, "영업시간은 방문 전에 확인해 주세요.");
+  const nowMinutes=now.getHours()*60+now.getMinutes();
+  const openNow = Array.isArray(openingHours?.periods) ? openingHours.periods.some((period:any)=>{
+    const open=period.open, close=period.close;
+    if (!open) return false;
+    const openMinutes=(open.hour||0)*60+(open.minute||0);
+    if (!close) return open.day===now.getDay();
+    const closeMinutes=(close.hour||0)*60+(close.minute||0);
+    if (open.day===close.day) return open.day===now.getDay() && nowMinutes>=openMinutes && nowMinutes<closeMinutes;
+    return (open.day===now.getDay() && nowMinutes>=openMinutes) || (close.day===now.getDay() && nowMinutes<closeMinutes);
+  }) : undefined;
   const summarySource = typeof place.editorialSummary === "string" ? place.editorialSummary : place.editorialSummary?.text;
   const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
   const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
@@ -132,30 +147,50 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const reviewHighlights = Array.isArray(place.reviews)
     ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,3)
     : [];
-  const summaryText = (value:any) => typeof value === "string" ? value : value?.text || value?.overview || "";
+  const summaryText = (value:any):string => {
+    if (typeof value === "string") return value;
+    if (typeof value?.text === "string") return value.text;
+    if (typeof value?.text?.text === "string") return value.text.text;
+    if (typeof value?.overview === "string") return value.overview;
+    if (typeof value?.overview?.text === "string") return value.overview.text;
+    return "";
+  };
   const reviewSummary = koreanPlaceText(
     summaryText(place.reviewSummary) || summaryText(place.generativeSummary),
     ""
   );
   const serviceLabels:[string,string][] = [
-    ["dineIn","매장 식사"],["takeout","포장 가능"],["delivery","배달 가능"],["reservable","예약 가능"],
-    ["outdoorSeating","야외 좌석"],["servesBreakfast","아침식사"],["servesLunch","점심식사"],
+    ["hasDineIn","매장 식사"],["hasTakeout","포장 가능"],["hasDelivery","배달 가능"],["isReservable","예약 가능"],
+    ["hasOutdoorSeating","야외 좌석"],["servesBreakfast","아침식사"],["servesLunch","점심식사"],
     ["servesDinner","저녁식사"],["servesCoffee","커피"],["servesDessert","디저트"],
-    ["servesBeer","맥주"],["servesCocktails","칵테일"],["goodForChildren","아이 동반 적합"],
-    ["goodForGroups","단체 이용 적합"],["menuForChildren","어린이 메뉴"],["restroom","화장실"]
+    ["servesBeer","맥주"],["servesCocktails","칵테일"],["isGoodForChildren","아이 동반 적합"],
+    ["isGoodForGroups","단체 이용 적합"],["hasMenuForChildren","어린이 메뉴"],["hasRestroom","화장실"]
   ];
   const serviceOptions = serviceLabels.filter(([key])=>place[key] === true).map(([,label])=>label);
   const parkingLabels:[string,string][] = [
-    ["freeParkingLot","무료 주차장"],["paidParkingLot","유료 주차장"],["freeStreetParking","무료 노상주차"],
-    ["paidStreetParking","유료 노상주차"],["valetParking","발레파킹"],["freeGarageParking","무료 실내주차"],
-    ["paidGarageParking","유료 실내주차"]
+    ["hasFreeParkingLot","무료 주차장"],["hasPaidParkingLot","유료 주차장"],["hasFreeStreetParking","무료 노상주차"],
+    ["hasPaidStreetParking","유료 노상주차"],["hasValetParking","발레파킹"],["hasFreeGarageParking","무료 실내주차"],
+    ["hasPaidGarageParking","유료 실내주차"]
   ];
   const parkingOptions = parkingLabels.filter(([key])=>place.parkingOptions?.[key] === true).map(([,label])=>label);
   const accessibilityLabels:[string,string][] = [
-    ["wheelchairAccessibleEntrance","휠체어 출입 가능"],["wheelchairAccessibleParking","휠체어 주차 가능"],
-    ["wheelchairAccessibleRestroom","휠체어 화장실"],["wheelchairAccessibleSeating","휠체어 좌석"]
+    ["hasWheelchairAccessibleEntrance","휠체어 출입 가능"],["hasWheelchairAccessibleParking","휠체어 주차 가능"],
+    ["hasWheelchairAccessibleRestroom","휠체어 화장실"],["hasWheelchairAccessibleSeating","휠체어 좌석"]
   ];
-  const accessibility = accessibilityLabels.filter(([key])=>place.accessibilityOptions?.[key] === true).map(([,label])=>label);
+  const accessibility = accessibilityLabels.filter(([key])=>place[key] === true).map(([,label])=>label);
+  const paymentLabels:[string,string][] = [
+    ["acceptsCreditCards","신용카드"],["acceptsDebitCards","체크카드"],["acceptsNFC","모바일 결제"],["acceptsCashOnly","현금만 가능"]
+  ];
+  const paymentOptions = paymentLabels.filter(([key])=>place.paymentOptions?.[key] === true).map(([,label])=>label);
+  const photoUrls = Array.isArray(place.photos)
+    ? place.photos.slice(0,10).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
+    : [];
+  const detailedReviews = Array.isArray(place.reviews) ? place.reviews.slice(0,5).map((review:any)=>({
+    text:String(review.text || review.originalText || "").trim(),
+    rating:typeof review.rating === "number" ? review.rating : undefined,
+    author:review.authorAttribution?.displayName,
+    time:review.relativePublishTimeDescription
+  })).filter((review:any)=>review.text) : [];
   return {
     name:koreanName,
     originalName:rawName && rawName !== koreanName ? rawName : undefined,
@@ -165,9 +200,10 @@ function googlePlaceDetails(place:any, fallbackName:string) {
     googlePriceRange,googlePriceLevel,reviewHighlights,
     phone:place.nationalPhoneNumber || place.internationalPhoneNumber || undefined,
     website:place.websiteURI || place.websiteUri || undefined,
-    openNow:typeof openingHours?.openNow === "boolean" ? openingHours.openNow : undefined,
+    openNow,
     weeklyHours:Array.isArray(openingHours?.weekdayDescriptions) ? openingHours.weekdayDescriptions : [],
-    reviewSummary,serviceOptions,parkingOptions,accessibility
+    reviewSummary,serviceOptions,parkingOptions,accessibility,paymentOptions,photoUrls,detailedReviews,
+    photosPage:place.googleMapsLinks?.photosURI, reviewsPage:place.googleMapsLinks?.reviewsURI
   };
 }
 
@@ -371,33 +407,44 @@ export default function Home() {
       try {
         const google=(window as any).google;
         const {Place}=await google.maps.importLibrary("places");
-        const place=new Place({id:selected.googlePlaceId});
+        const place=new Place({id:selected.googlePlaceId,requestedLanguage:"ko",requestedRegion:"JP"});
+        const mergePlace=(detailLoaded=false)=>{
+          if (cancelled) return;
+          const details=googlePlaceDetails(place,selected.name);
+          const enriched:Point={
+            ...selected,...details,sub:details.address,detailLoaded,
+            query:place.googleMapsURI || selected.query,
+            photoUrl:details.photoUrls?.[0] || selected.photoUrl
+          };
+          setSelected(enriched);
+          const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?enriched:item);
+          setPlaceResults(replace);
+          setGuideRecommendations(replace);
+          setSavedPlaces((items)=>{
+            if (!items.some((item)=>item.id===enriched.id)) return items;
+            const next=replace(items);
+            localStorage.setItem("saved-google-places",JSON.stringify(next));
+            return next;
+          });
+        };
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
           "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
-          "reviews","editorialSummary","generativeSummary","reviewSummary","parkingOptions","paymentOptions",
-          "accessibilityOptions","dineIn","takeout","delivery","reservable","outdoorSeating","restroom",
-          "goodForChildren","goodForGroups","menuForChildren","servesBreakfast","servesLunch","servesDinner",
-          "servesCoffee","servesDessert","servesBeer","servesCocktails"
+          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI"
         ]});
-        if (cancelled) return;
-        const details=googlePlaceDetails(place,selected.name);
-        const enriched:Point={
-          ...selected,...details,sub:details.address,detailLoaded:true,
-          query:place.googleMapsURI || selected.query,
-          photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560}) || selected.photoUrl
-        };
-        setSelected(enriched);
-        const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?enriched:item);
-        setPlaceResults(replace);
-        setGuideRecommendations(replace);
-        setSavedPlaces((items)=>{
-          if (!items.some((item)=>item.id===enriched.id)) return items;
-          const next=replace(items);
-          localStorage.setItem("saved-google-places",JSON.stringify(next));
-          return next;
-        });
+        mergePlace();
+        try {
+          await place.fetchFields({fields:[
+            "reviews","editorialSummary","generativeSummary","reviewSummary","googleMapsLinks",
+            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
+            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
+            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
+            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
+            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
+          ]});
+          mergePlace(true);
+        } catch {}
+        if (!cancelled && !place.reviews) mergePlace(true);
       } catch {
         if (!cancelled) setSelected((current)=>current.id===selected.id?{...current,detailLoaded:true}:current);
       } finally {
@@ -545,7 +592,7 @@ export default function Home() {
         event.stop();
         try {
           const { Place } = await google.maps.importLibrary("places");
-          const place = new Place({ id:event.placeId });
+          const place = new Place({ id:event.placeId,requestedLanguage:"ko",requestedRegion:"JP" });
           await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"] });
           if (!place.location) return;
           const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
@@ -1383,7 +1430,10 @@ export default function Home() {
               <section className="place-detail-popup" role="dialog" aria-modal="true" aria-label={`${selected.name} 상세 정보`} onPointerDown={(event)=>event.stopPropagation()}>
                 <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{selected.name}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
                 <div className="place-detail-popup-scroll">
-            {selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
+            {selected.photoUrls&&selected.photoUrls.length>0 ? <section className="place-photo-section">
+              <div className="place-photo-gallery">{selected.photoUrls.map((url,index)=><img key={url} src={url} alt={`${selected.name} Google 등록 사진 ${index+1}`}/>)}</div>
+              <div><span>Google 등록 사진 · 메뉴·상품·매장 사진 포함 가능</span>{selected.photosPage&&<a href={selected.photosPage} target="_blank" rel="noreferrer">사진 전체 보기</a>}</div>
+            </section> : selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
             <div className="selected-place" style={{"--place-color":pointColor(selected)} as React.CSSProperties}>
               <span className="place-dot" style={{background:pointColor(selected)}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
               <div className="place-main">
@@ -1414,18 +1464,25 @@ export default function Home() {
             {selected.serviceOptions&&selected.serviceOptions.length>0&&<section className="google-detail-block">
               <h3>이용 정보</h3><div className="detail-chip-list">{selected.serviceOptions.map((item)=><span key={item}>{item}</span>)}</div>
             </section>}
-            {(selected.parkingOptions?.length||selected.accessibility?.length)&&<section className="google-detail-block">
+            {Boolean(selected.parkingOptions?.length||selected.accessibility?.length)&&<section className="google-detail-block">
               <h3>주차·편의시설</h3>
               <div className="detail-chip-list">{[...(selected.parkingOptions||[]),...(selected.accessibility||[])].map((item)=><span key={item}>{item}</span>)}</div>
+            </section>}
+            {selected.paymentOptions&&selected.paymentOptions.length>0&&<section className="google-detail-block">
+              <h3>결제 정보</h3><div className="detail-chip-list">{selected.paymentOptions.map((item)=><span key={item}>{item}</span>)}</div>
             </section>}
             {selected.weeklyHours&&selected.weeklyHours.length>0&&<details className="weekly-hours">
               <summary>요일별 운영시간 전체 보기</summary>
               <div>{selected.weeklyHours.map((item)=><p key={item}>{item}</p>)}</div>
             </details>}
-            {(selected.reviewSummary||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
-              <h3>Google 이용자 후기 요약</h3>
+            {Boolean(selected.reviewSummary||selected.detailedReviews?.length||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
+              <h3>Google 이용자 후기</h3>
               {selected.reviewSummary&&<p>{selected.reviewSummary}</p>}
-              {selected.reviewHighlights?.slice(0,3).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+              {selected.detailedReviews?.length ? selected.detailedReviews.slice(0,5).map((review,index)=><blockquote key={index}>
+                <header><b>{review.rating?`★ ${review.rating.toFixed(1)}`:"이용자 후기"}</b><span>{[review.author,review.time].filter(Boolean).join(" · ")}</span></header>
+                {review.text}
+              </blockquote>) : selected.reviewHighlights?.slice(0,3).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+              {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setPlaceDetailOpen(false); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
