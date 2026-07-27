@@ -988,14 +988,16 @@ export default function Home() {
   };
 
   const selectRecommendationCategory = (item:Category) => {
-    setCategory(item);
     const candidates = item === "전체" ? combinedPlacePool : combinedPlacePool.filter((point)=>guideGroup(point)===item);
-    const next = candidates[0] || areaPoint;
-    if (next) {
-      setSelected(next);
-      mapRef.current?.panTo({lat:next.lat,lng:next.lng});
+    if (!candidates.length) {
+      setRouteError(`${travelArea} 추천 장소 중 '${item}' 카테고리 결과가 없어요.`);
+      return;
     }
-    if (item !== "전체") void searchGooglePlaces(item);
+    setRouteError("");
+    setCategory(item);
+    const next = candidates[0];
+    setSelected(next);
+    mapRef.current?.panTo({lat:next.lat,lng:next.lng});
   };
 
   const tripDays = (() => {
