@@ -12,6 +12,7 @@ type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
+  photoUrl?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string };
@@ -131,6 +132,8 @@ export default function Home() {
   const [guideStart, setGuideStart] = useState("");
   const [guideEnd, setGuideEnd] = useState("");
   const [guideSaving, setGuideSaving] = useState(false);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
@@ -352,6 +355,58 @@ export default function Home() {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
     } finally {
       setAreaMoving(false);
+    }
+  };
+
+  const buildAreaGuide = async () => {
+    if (!travelArea.trim()) return;
+    setGuideLoading(true);
+    setRouteError("");
+    try {
+      const google = (window as any).google;
+      const geocoder = new google.maps.Geocoder();
+      const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
+      if (!areaResults?.[0]) throw new Error();
+      const center = areaResults[0].geometry.location;
+      mapRef.current?.setCenter(center);
+      mapRef.current?.setZoom(13);
+      localStorage.setItem("travel-search-area", travelArea.trim());
+      const { Place } = await google.maps.importLibrary("places");
+      const types = [
+        { label:"관광", query:"대표 관광지 명소", color:"#275fbd" },
+        { label:"맛집", query:"현지인 인기 맛집", color:"#ef6a4c" },
+        { label:"카페", query:"인기 카페 디저트", color:"#c56892" },
+        { label:"쇼핑", query:"쇼핑 백화점 전통시장", color:"#e54473" },
+        { label:"온천·휴식", query:"온천 스파 가족 휴식", color:"#6b55b5" }
+      ];
+      const batches = await Promise.all(types.map(async (type) => {
+        const { places } = await Place.searchByText({
+          textQuery:`${travelArea.trim()} ${type.query}`,
+          fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
+          locationBias:{ center, radius:30000 },
+          language:"ko",
+          maxResultCount:4
+        });
+        return places.filter((place:any)=>place.location).slice(0,3).map((place:any,index:number) => {
+          const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
+          return {
+            id:`guide-${type.label}-${place.id}`,
+            name:details.name, sub:details.address, category:"검색" as const,
+            lat:place.location.lat(), lng:place.location.lng(), color:type.color,
+            hours:details.hours, description:details.description,
+            tip:`${type.label} 분야의 평점과 인지도를 참고한 추천 장소예요.`,
+            query:place.googleMapsURI || place.displayName || "",
+            placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
+            businessStatus:details.businessStatus,
+            photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 })
+          };
+        });
+      }));
+      setGuideRecommendations(batches.flat().filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index));
+    } catch {
+      setRouteError("지역 추천 정보를 만들지 못했어요. Google Places 할당량을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      setGuideLoading(false);
     }
   };
 
@@ -625,9 +680,18 @@ export default function Home() {
             <button onClick={() => window.print()}><Printer size={17}/>PDF</button>
           </div>
           <div className="guide-scroll">
+            <div className="guide-recommend-panel">
+              <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
+              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
+              <button onClick={buildAreaGuide} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
+              {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
+              {routeError && <p className="guide-error">{routeError}</p>}
+            </div>
             <div className="travel-guide" ref={guideRef}>
               {(() => {
-                const guidePlaces = savedPlaces.length ? savedPlaces : spots.slice(0,8);
+                const guidePlaces = guideRecommendations.length
+                  ? [...savedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
+                  : savedPlaces.length ? savedPlaces : spots.slice(0,8);
                 const minLat = Math.min(...guidePlaces.map((p)=>p.lat)), maxLat = Math.max(...guidePlaces.map((p)=>p.lat));
                 const minLng = Math.min(...guidePlaces.map((p)=>p.lng)), maxLng = Math.max(...guidePlaces.map((p)=>p.lng));
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
@@ -657,6 +721,7 @@ export default function Home() {
                     <div className="guide-card-grid">
                       {guidePlaces.slice(0,8).map((point,index)=><div className="guide-place-card" key={point.id}>
                         <div className="guide-card-head" style={{background:point.color}}><span>{index+1}</span><b>{point.name}</b></div>
+                        {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
                         <p>{point.description}</p>
                         {point.rating && <strong>★ {point.rating.toFixed(1)} · 후기 {point.reviewCount?.toLocaleString("ko-KR") || 0}개</strong>}
