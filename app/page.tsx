@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Printer, Search, TrainFront, Trash2, X
+  Heart, MapPin, Navigation, Plus, Printer, Search, TrainFront, Trash2, Users, X
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
@@ -17,6 +17,8 @@ type Point = {
   recommendedMenu?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
+type Traveler = { id:string; relation:string; age:string };
+type TripProfile = { travelers:Traveler[]; startDate:string; endDate:string };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
 type TransitStep = { instruction:string; line?:string; vehicle?:string; departure?:string; arrival?:string; stops?:number; minutes:number };
 type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean; transitSteps?:TransitStep[]; transfers?:number };
@@ -220,7 +222,7 @@ export default function Home() {
   const [mapsKey, setMapsKey] = useState("");
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
-  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel">("places");
+  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
@@ -246,6 +248,14 @@ export default function Home() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideStart, setGuideStart] = useState("");
   const [guideEnd, setGuideEnd] = useState("");
+  const [travelers, setTravelers] = useState<Traveler[]>([
+    {id:"grandmother",relation:"할머니",age:""},
+    {id:"mother",relation:"엄마",age:""},
+    {id:"father",relation:"아빠",age:""},
+    {id:"child-9",relation:"여아",age:"9"},
+    {id:"child-5",relation:"여아",age:"5"}
+  ]);
+  const [tripSaved, setTripSaved] = useState(false);
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
@@ -319,6 +329,16 @@ export default function Home() {
     }
     const savedArea = localStorage.getItem("travel-search-area");
     if (savedArea) setTravelArea(savedArea);
+    const savedTrip = localStorage.getItem("family-trip-profile");
+    if (savedTrip) {
+      try {
+        const parsed:TripProfile = JSON.parse(savedTrip);
+        if (Array.isArray(parsed.travelers) && parsed.travelers.length) setTravelers(parsed.travelers);
+        if (parsed.startDate) setGuideStart(parsed.startDate);
+        if (parsed.endDate) setGuideEnd(parsed.endDate);
+        setTripSaved(true);
+      } catch {}
+    }
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
         setGoogleReady(true);
@@ -866,6 +886,41 @@ export default function Home() {
     if (item !== "전체") void searchGooglePlaces(item);
   };
 
+  const tripDays = (() => {
+    if (!guideStart || !guideEnd) return null;
+    const start = new Date(`${guideStart}T00:00:00`);
+    const end = new Date(`${guideEnd}T00:00:00`);
+    const nights = Math.round((end.getTime()-start.getTime())/86400000);
+    return nights >= 0 ? { nights, days:nights+1 } : null;
+  })();
+
+  const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
+    setTravelers((current)=>current.map((traveler)=>traveler.id===id ? {...traveler,[field]:value} : traveler));
+    setTripSaved(false);
+  };
+
+  const addTraveler = () => {
+    setTravelers((current)=>[...current,{id:`traveler-${Date.now()}`,relation:"구성원",age:""}]);
+    setTripSaved(false);
+  };
+
+  const removeTraveler = (id:string) => {
+    setTravelers((current)=>current.length > 1 ? current.filter((traveler)=>traveler.id!==id) : current);
+    setTripSaved(false);
+  };
+
+  const saveTripProfile = () => {
+    if (guideStart && guideEnd && !tripDays) {
+      setRouteError("여행 종료일은 시작일보다 늦어야 해요.");
+      return;
+    }
+    const profile:TripProfile = {travelers,startDate:guideStart,endDate:guideEnd};
+    localStorage.setItem("family-trip-profile",JSON.stringify(profile));
+    setTripSaved(true);
+    setRouteError("");
+    setSheet("places");
+  };
+
   return (
     <main
       className="mobile-app"
@@ -877,7 +932,10 @@ export default function Home() {
     >
       <header className="mobile-header">
         <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>오늘 어디로 갈까요?</h1></div>
-        <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
+        <div className="header-actions">
+          <button className={`round-button ${tripSaved ? "ready" : ""}`} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
+          <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
+        </div>
       </header>
 
       <section className="mobile-map-wrap">
@@ -985,6 +1043,34 @@ export default function Home() {
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
             <button className="guide-create-button" onClick={() => setGuideOpen(true)}><BookOpen size={17}/> 저장 장소로 가이드북 만들기</button>
+          </>
+        )}
+
+        {sheet === "trip" && (
+          <>
+            <div className="sheet-heading"><div><small>AI 맞춤 추천의 기준</small><h2>여행 구성 설정</h2></div><button className="icon-close" onClick={()=>setSheet("places")}><X size={20}/></button></div>
+            <div className="trip-summary">
+              <Users size={20}/>
+              <div><b>{travelers.length}명 가족여행</b><small>{tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "여행 날짜를 등록해 주세요"}</small></div>
+            </div>
+            <div className="trip-dates">
+              <label><span>여행 시작일</span><input type="date" value={guideStart} onChange={(e)=>{setGuideStart(e.target.value);setTripSaved(false);}}/></label>
+              <label><span>여행 종료일</span><input type="date" min={guideStart || undefined} value={guideEnd} onChange={(e)=>{setGuideEnd(e.target.value);setTripSaved(false);}}/></label>
+            </div>
+            <div className="traveler-heading"><div><b>여행 구성원</b><small>관계와 나이를 입력하면 AI가 이동 난이도와 장소를 조정해요.</small></div><button onClick={addTraveler}><Plus size={14}/>추가</button></div>
+            <div className="traveler-list">
+              {travelers.map((traveler,index)=>(
+                <div className="traveler-row" key={traveler.id}>
+                  <span>{index+1}</span>
+                  <input value={traveler.relation} onChange={(e)=>updateTraveler(traveler.id,"relation",e.target.value)} placeholder="관계 · 예: 할머니"/>
+                  <label><input type="number" min="0" max="120" value={traveler.age} onChange={(e)=>updateTraveler(traveler.id,"age",e.target.value)} placeholder="나이"/><small>세</small></label>
+                  <button onClick={()=>removeTraveler(traveler.id)} aria-label="구성원 삭제"><Trash2 size={15}/></button>
+                </div>
+              ))}
+            </div>
+            <div className="ai-profile-note"><b>AI 반영 예정 정보</b><p>{travelers.map((traveler)=>`${traveler.relation}${traveler.age ? ` ${traveler.age}세` : ""}`).join(" · ")}{tripDays ? ` · ${tripDays.nights}박 ${tripDays.days}일` : ""}</p></div>
+            <button className="save-trip-button" onClick={saveTripProfile}><Users size={17}/>{tripSaved ? "여행 정보 저장됨" : "여행 정보 저장하기"}</button>
+            {routeError && <p className="route-error">{routeError}</p>}
           </>
         )}
 
