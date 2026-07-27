@@ -83,7 +83,7 @@ export default function Home() {
       setLmod(L);
       const map = L.map(mapEl.current, { zoomControl:false, attributionControl:false }).setView([35.3845, 136.9417], 15);
       mapRef.current = map;
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png", {
         subdomains:"abcd", maxZoom:20
       }).addTo(map);
       L.control.zoom({ position:"topright" }).addTo(map);
@@ -98,7 +98,9 @@ export default function Home() {
     const labels = [
       { name:"이누야마역", lat:35.3802772, lng:136.9457636 },
       { name:"이누야마 성하마을", lat:35.3842, lng:136.9410 },
-      { name:"기소강", lat:35.3910, lng:136.9410 }
+      { name:"기소강", lat:35.3910, lng:136.9410 },
+      { name:"이누야마성", lat:35.38865, lng:136.93785 },
+      { name:"이누야마유엔역", lat:35.39055, lng:136.94670 }
     ];
     labels.forEach((label) => {
       Lmod.marker([label.lat, label.lng], {
@@ -218,6 +220,14 @@ export default function Home() {
     mapRef.current.fitBounds(routeLayerRef.current.getBounds(), { padding:[45,45] });
   };
 
+  const clearRoute = () => {
+    routeLayerRef.current?.remove();
+    routeLayerRef.current = null;
+    setRoute(null);
+    setRouteError("");
+    mapRef.current?.setView([35.3845, 136.9417], 15, { animate:true });
+  };
+
   return (
     <main className="mobile-app">
       <header className="mobile-header">
@@ -287,7 +297,7 @@ export default function Home() {
 
         {sheet === "route" && (
           <>
-            <div className="sheet-heading"><div><small>출발지부터 도착지까지</small><h2>이동시간 확인</h2></div>{route && <div className="route-result-mini"><b>{route.minutes}분</b><small>{distanceText(route.distance)}</small></div>}</div>
+            <div className="sheet-heading"><div><small>출발지부터 도착지까지</small><h2>이동시간 확인</h2></div>{route && <div className="route-heading-actions"><div className="route-result-mini"><b>{route.minutes}분</b><small>{distanceText(route.distance)}</small></div><button className="clear-route" onClick={clearRoute}><X size={15}/>경로 닫기</button></div>}</div>
             <div className="route-mode">
               <button className={mode==="walk"?"active":""} onClick={()=>setMode("walk")}><Footprints size={17}/>도보</button>
               <button className={mode==="drive"?"active":""} onClick={()=>setMode("drive")}><Car size={17}/>자동차</button>
