@@ -25,6 +25,7 @@ type Point = {
   photoUrls?: string[]; paymentOptions?: string[]; photosPage?: string; reviewsPage?: string;
   detailedReviews?: {text:string;rating?:number;author?:string;time?:string}[];
   priorityShop?: boolean;
+  detailAiLoaded?: boolean; detailAiSource?: string;
 };
 type Hotel = { name: string; address: string; lat: number; lng: number };
 type Traveler = { id:string; relation:string; age:string };
@@ -341,6 +342,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Point>(spots[0]);
   const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
   const [placeDetailLoading, setPlaceDetailLoading] = useState(false);
+  const [placeInsightLoading, setPlaceInsightLoading] = useState(false);
   const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
@@ -387,6 +389,9 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
+  const travelAreaRef=useRef(travelArea);
+  const areaPointRef=useRef<Point|null>(areaPoint);
+  const areaBoundsRef=useRef<any>(areaBounds);
   const aiCacheKey = () => `ai-trip-guide-v9:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
@@ -399,6 +404,12 @@ export default function Home() {
   const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations, ...routeSearchPoints];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
+
+  useEffect(()=>{
+    travelAreaRef.current=travelArea;
+    areaPointRef.current=areaPoint;
+    areaBoundsRef.current=areaBounds;
+  },[travelArea,areaPoint,areaBounds]);
 
   useEffect(() => {
     if (!placeDetailOpen || !googleReady || !selected.googlePlaceId || selected.detailLoaded) return;
@@ -455,6 +466,68 @@ export default function Home() {
     void loadDetails();
     return()=>{cancelled=true;};
   },[placeDetailOpen,googleReady,selected.id,selected.googlePlaceId,selected.detailLoaded]);
+
+  useEffect(()=>{
+    if (!placeDetailOpen || !selected.detailLoaded || !selected.googlePlaceId || selected.detailAiLoaded) return;
+    const group=guideGroup(selected);
+    if (!["맛집","카페","디저트","쇼핑","소품샵","전통시장","주류","이자카야·술집"].includes(group)) return;
+    let cancelled=false;
+    const applyInsight=(detail:any)=>{
+      if (cancelled) return;
+      const items=Array.isArray(detail?.items)?detail.items:[];
+      const enriched:Point={
+        ...selected,
+        description:detail?.description || selected.description,
+        aiRecommendedItems:items.length?items:selected.aiRecommendedItems,
+        aiFamousItems:items.length?items.map((item:any)=>String(item.name)).slice(0,3):selected.aiFamousItems,
+        recommendedMenu:items.length?items.map((item:any)=>String(item.name)).join(" · "):selected.recommendedMenu,
+        detailAiSource:detail?.source || "Google 장소 정보",
+        detailAiLoaded:true
+      };
+      setSelected(enriched);
+      const replace=(points:Point[])=>points.map((point)=>point.id===enriched.id?enriched:point);
+      setPlaceResults(replace);
+      setGuideRecommendations(replace);
+      setSavedPlaces(points=>{
+        if (!points.some(point=>point.id===enriched.id)) return points;
+        const next=replace(points);
+        localStorage.setItem("inuyama-saved-places",JSON.stringify(next));
+        return next;
+      });
+    };
+    const loadInsight=async()=>{
+      const cacheKey=`ai-place-detail-v2:${selected.googlePlaceId}`;
+      try {
+        const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
+        if (cached?.createdAt>Date.now()-7*24*60*60*1000 && cached.detail) {
+          applyInsight(cached.detail);
+          return;
+        }
+      } catch {}
+      setPlaceInsightLoading(true);
+      try {
+        const response=await fetch("/api/ai-place-detail",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            name:selected.name,originalName:selected.originalName,type:selected.placeType||group,
+            googleSummary:selected.description,
+            googlePrice:selected.googlePriceRange||selected.googlePriceLevel,
+            reviews:selected.detailedReviews?.map(review=>review.text)||selected.reviewHighlights||[]
+          })
+        });
+        const data=await response.json();
+        if (!response.ok || !data.detail) throw new Error();
+        try {localStorage.setItem(cacheKey,JSON.stringify({createdAt:Date.now(),detail:data.detail}));} catch {}
+        applyInsight(data.detail);
+      } catch {
+        if (!cancelled) setSelected(current=>current.id===selected.id?{...current,detailAiLoaded:true}:current);
+      } finally {
+        if (!cancelled) setPlaceInsightLoading(false);
+      }
+    };
+    void loadInsight();
+    return()=>{cancelled=true;};
+  },[placeDetailOpen,selected.id,selected.googlePlaceId,selected.detailLoaded,selected.detailAiLoaded]);
 
   useEffect(() => {
     if (!placeDetailOpen) return;
@@ -597,11 +670,13 @@ export default function Home() {
           await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"] });
           if (!place.location) return;
           const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
-          const currentCenter = areaPoint || (isInuyamaArea ? station : null);
-          const isInsideBounds = areaBounds?.contains ? areaBounds.contains(clickedPoint) : true;
+          const activeArea=travelAreaRef.current;
+          const currentCenter = areaPointRef.current || (/이누야마|犬山/i.test(activeArea) ? station : null);
+          const activeBounds=areaBoundsRef.current;
+          const isInsideBounds = activeBounds?.contains ? activeBounds.contains(clickedPoint) : true;
           const isInsideRadius = currentCenter ? pointDistanceKm(currentCenter, clickedPoint) <= 20 : true;
           if (!isInsideBounds || !isInsideRadius) {
-            setRouteError(`${travelArea} 지역 안의 장소만 선택할 수 있어요.`);
+            setRouteError(`${activeArea} 지역 안의 장소만 선택할 수 있어요.`);
             return;
           }
           const details = googlePlaceDetails(place, "지도에서 선택한 장소");
@@ -1531,6 +1606,11 @@ export default function Home() {
               </blockquote>) : selected.reviewHighlights?.slice(0,3).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
               {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
+            {placeInsightLoading&&<div className="place-insight-loading"><Sparkles size={15}/>Google 설명과 후기를 바탕으로 판매 메뉴를 정리하고 있어요.</div>}
+            {selected.detailAiLoaded&&selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<section className="place-offerings">
+              <div><span>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected))?"이곳에서 파는 음식":"이곳에서 살 수 있는 것"}</span><small>{selected.detailAiSource}</small></div>
+              <div>{selected.aiRecommendedItems.map((item,index)=><article key={`${item.name}-${index}`}><b>{item.name}</b><strong>{item.price}</strong></article>)}</div>
+            </section>}
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setPlaceDetailOpen(false); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
               <button className={`save-action ${savedPlaces.some((item) => item.id === selected.id) ? "saved" : ""}`} onClick={() => toggleSavedPlace(selected)} aria-label="장소 저장">
@@ -1542,7 +1622,7 @@ export default function Home() {
               <div className="ai-card-head"><span><Sparkles size={15}/>AI 가족 맞춤 추천</span>{selected.aiBestTime&&<small>{selected.aiBestTime}</small>}</div>
               <p className="ai-summary">{selected.aiReason}</p>
               {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "대표 메뉴" : guideGroup(selected)==="쇼핑" ? "추천 쇼핑" : "추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
-              {selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<div className="ai-item-list">
+              {!selected.detailAiLoaded&&selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<div className="ai-item-list">
                 <b>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected)) ? "추천 메뉴와 가격" : ["쇼핑","소품샵","주류","전통시장"].includes(guideGroup(selected)) ? "추천 상품과 가격" : "추천 항목과 가격"}</b>
                 <div>{selected.aiRecommendedItems.map((item,index)=><p key={`${item.name}-${index}`}><span>{item.name}</span><strong>{item.price}</strong></p>)}</div>
               </div>}
