@@ -314,7 +314,7 @@ export default function Home() {
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
-  const aiCacheKey = () => `ai-trip-guide-v6:${JSON.stringify({
+  const aiCacheKey = () => `ai-trip-guide-v7:${JSON.stringify({
     area:travelArea.trim(),start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -736,20 +736,39 @@ export default function Home() {
         { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
       ];
       const batches = await Promise.allSettled(types.map(async (type) => {
-        const { places } = await Place.searchByText({
+        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange","reviews","editorialSummary"];
+        const { places:localPlaces } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
-          fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange","reviews","editorialSummary"],
+          fields,
           locationRestriction:bounds,
           language:"ko",
-          maxResultCount:4
+          maxResultCount:10
         });
-        return places.filter((place:any)=>{
+        const nearbyLocal = localPlaces.filter((place:any)=>{
           if (!place.location || !bounds.contains(place.location)) return false;
           return pointDistanceKm(
             { lat:centerLat, lng:centerLng },
             { lat:place.location.lat(), lng:place.location.lng() }
           ) <= 20;
-        }).slice(0,3).map((place:any,index:number) => {
+        });
+        let places = nearbyLocal;
+        if (places.length < 5) {
+          const { places:expandedPlaces } = await Place.searchByText({
+            textQuery:`${travelArea.trim()} 인근 ${type.query}`,
+            fields,
+            locationBias:{center:{lat:centerLat,lng:centerLng},radius:30000},
+            language:"ko",
+            maxResultCount:10
+          });
+          places = [...nearbyLocal,...expandedPlaces.filter((place:any)=>{
+            if (!place.location) return false;
+            return pointDistanceKm(
+              { lat:centerLat, lng:centerLng },
+              { lat:place.location.lat(), lng:place.location.lng() }
+            ) <= 30;
+          })].filter((place:any,index:number,items:any[])=>items.findIndex((item:any)=>item.id===place.id)===index);
+        }
+        return places.slice(0,5).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
@@ -768,9 +787,9 @@ export default function Home() {
         });
       }));
       const categoryCandidates = batches.map((batch)=>batch.status==="fulfilled" ? batch.value : []);
-      const candidates = [0,1].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean))
+      const candidates = [0,1,2,3,4].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean))
         .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index)
-        .slice(0,22);
+        .slice(0,60);
       if (!candidates.length) throw new Error();
       fallbackPoints = candidates.map((point)=>({
         ...point,
@@ -844,7 +863,7 @@ export default function Home() {
           ? {...point,name:localizedName,originalName:point.originalName || point.name}
           : point;
       });
-      const next = [...aiSelected,...localizedFallback].slice(0,20);
+      const next = [...aiSelected,...localizedFallback].slice(0,60);
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
@@ -1231,7 +1250,10 @@ export default function Home() {
           <>
             <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2>{selected.originalName && <span className="original-name">{selected.originalName}</span>}</div></div>
             <div className="category-scroll">
-              {categories.map((item) => <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}</button>)}
+              {categories.map((item) => {
+                const count=item==="전체" ? recommendationPool.length : recommendationPool.filter((point)=>guideGroup(point)===item).length;
+                return <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}{count>0&&<small>{count}</small>}</button>;
+              })}
             </div>
             {selected.photoUrl && <img className="selected-place-photo" src={selected.photoUrl} alt={`${selected.name} 사진`}/>}
             <div className="selected-place" style={{"--place-color":pointColor(selected)} as React.CSSProperties}>

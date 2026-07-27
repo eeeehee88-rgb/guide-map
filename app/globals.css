@@ -188,6 +188,7 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .category-scroll,.quick-search,.spot-strip{scrollbar-width:none}
 .category-scroll::-webkit-scrollbar,.quick-search::-webkit-scrollbar,.spot-strip::-webkit-scrollbar{display:none}
 .category-scroll button,.quick-search button{flex-shrink:0;line-height:16px}
+.category-scroll button{display:flex;align-items:center;gap:6px}.category-scroll button small{min-width:18px;height:18px;display:grid;place-items:center;padding:0 5px;border-radius:999px;background:color-mix(in srgb,var(--category-color) 14%,#fff);color:var(--category-color);font-size:9px;font-weight:900}.category-scroll button.active small{background:rgba(255,255,255,.22);color:#fff}
 .area-search,.hotel-search{width:100%;padding:0 5px 0 12px;overflow:hidden}
 .area-search input,.hotel-search input{width:0;height:100%;padding:0 4px;border:0!important;border-radius:0;background:transparent;box-shadow:none!important}
 .area-search button,.hotel-search button{flex:0 0 auto;margin:0}
