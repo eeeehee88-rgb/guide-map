@@ -144,6 +144,7 @@ export default function Home() {
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
+  const [areaBounds, setAreaBounds] = useState<any>(null);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
@@ -325,7 +326,7 @@ export default function Home() {
       const { places } = await Place.searchByText({
         textQuery:`${placeQuery.trim()} ${travelArea.trim() || "일본"}`,
         fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus"],
-        locationBias:center ? { center, radius:7000 } : undefined,
+        ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
         maxResultCount:12
       });
@@ -365,11 +366,12 @@ export default function Home() {
       if (!areaResults?.[0]) throw new Error();
       mapRef.current?.setCenter(areaResults[0].geometry.location);
       mapRef.current?.setZoom(13);
+      setAreaBounds(areaResults[0].geometry.viewport);
       localStorage.setItem("travel-search-area", travelArea.trim());
       setPlaceResults([]);
       setGuideRecommendations([]);
       setCategory("전체");
-      await buildAreaGuide(areaResults[0].geometry.location);
+      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport);
     } catch {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
     } finally {
@@ -377,7 +379,7 @@ export default function Home() {
     }
   };
 
-  const buildAreaGuide = async (providedCenter?: any) => {
+  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any) => {
     if (!travelArea.trim()) return;
     setGuideLoading(true);
     setGuideRecommendations([]);
@@ -387,12 +389,16 @@ export default function Home() {
     try {
       const google = (window as any).google;
       let center = providedCenter;
+      let bounds = providedBounds;
       if (!center?.lat) {
         const geocoder = new google.maps.Geocoder();
         const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
         if (!areaResults?.[0]) throw new Error();
         center = areaResults[0].geometry.location;
+        bounds = areaResults[0].geometry.viewport;
       }
+      if (!bounds) throw new Error();
+      setAreaBounds(bounds);
       mapRef.current?.setCenter(center);
       mapRef.current?.setZoom(13);
       const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
@@ -423,11 +429,11 @@ export default function Home() {
         const { places } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
           fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
-          locationBias:{ center, radius:30000 },
+          locationRestriction:bounds,
           language:"ko",
           maxResultCount:5
         });
-        return places.filter((place:any)=>place.location).slice(0,4).map((place:any,index:number) => {
+        return places.filter((place:any)=>place.location && bounds.contains(place.location)).slice(0,4).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
