@@ -232,6 +232,7 @@ export default function Home() {
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
+  const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
@@ -254,6 +255,29 @@ export default function Home() {
   const regionalPlaceResults = placeResults.filter(isPointInCurrentArea);
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
+
+  const updateCurrentLocation = (centerMap:boolean, showError:boolean) => {
+    if (!navigator.geolocation) {
+      if (showError) setRouteError("이 기기에서는 현재 위치를 사용할 수 없어요.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition((position) => {
+      const next:Point = {
+        id:"current-location", name:"내 현재 위치", sub:"이 기기에서 확인한 현재 위치",
+        category:"검색", lat:position.coords.latitude, lng:position.coords.longitude,
+        color:"#e53935", hours:"", description:"현재 사용 중인 기기의 위치입니다.",
+        tip:"기기마다 위치 권한을 허용하면 각 기기의 현재 위치가 표시됩니다.", query:""
+      };
+      setCurrentLocation(next);
+      if (centerMap) {
+        mapRef.current?.setCenter({lat:next.lat,lng:next.lng});
+        mapRef.current?.setZoom(16);
+        setSheetCollapsed(true);
+      }
+    }, () => {
+      if (showError) setRouteError("위치 권한을 허용하면 지도에 현재 위치를 표시할 수 있어요.");
+    }, { enableHighAccuracy:true, timeout:12000, maximumAge:60000 });
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem("inuyama-hotel");
@@ -302,6 +326,11 @@ export default function Home() {
     };
     loadGoogle().catch(() => setRouteError("Google 지도를 불러오지 못했어요. Demo Key 할당량과 허용 설정을 확인해 주세요."));
   }, []);
+
+  useEffect(() => {
+    if (!googleReady) return;
+    updateCurrentLocation(false, false);
+  }, [googleReady]);
 
   useEffect(() => {
     const google = (window as any).google;
@@ -359,28 +388,29 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...regionalPlaceResults, ...regionalSavedPlaces]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
+      const isCurrentLocation = point.id === "current-location";
       const marker = new google.maps.Marker({
         map:mapRef.current,
         position:{ lat:point.lat, lng:point.lng },
         title:point.name,
         label:{
-          text:point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2),
+          text:isCurrentLocation ? "현재" : point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2),
           color:"#ffffff",
           fontSize:"10px",
           fontWeight:"800"
         },
         icon:{
           path:google.maps.SymbolPath.CIRCLE,
-          fillColor:point.color,
+          fillColor:isCurrentLocation ? "#e53935" : point.color,
           fillOpacity:1,
           strokeColor:"#ffffff",
           strokeWeight:selected.id === point.id ? 4 : 3,
-          scale:selected.id === point.id ? 18 : 15
+          scale:isCurrentLocation ? 11 : selected.id === point.id ? 18 : 15
         },
-        zIndex:selected.id === point.id ? 20 : 10
+        zIndex:isCurrentLocation ? 30 : selected.id === point.id ? 20 : 10
       });
       marker.addListener("click", () => {
         setSelected(point);
@@ -390,7 +420,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, travelArea]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -603,32 +633,38 @@ export default function Home() {
     if (!hotelQuery.trim()) return;
     setSearching(true);
     setResults([]);
+    setRouteError("");
     try {
-      const q = encodeURIComponent(`${hotelQuery.trim()} ${travelArea.trim()} 日本`);
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=jp&accept-language=ko&q=${q}`);
-      const data = await res.json();
-      setResults(data);
+      const google = (window as any).google;
+      if (!google?.maps) throw new Error();
+      const { Place } = await google.maps.importLibrary("places");
+      const center = areaPoint
+        ? { lat:areaPoint.lat, lng:areaPoint.lng }
+        : mapRef.current?.getCenter();
+      const { places } = await Place.searchByText({
+        textQuery:`${hotelQuery.trim()} ${travelArea.trim()} 일본`,
+        fields:["id","displayName","formattedAddress","location","primaryTypeDisplayName"],
+        ...(center ? { locationBias:{ center, radius:30000 } } : {}),
+        language:"ko",
+        maxResultCount:8
+      });
+      const next:SearchResult[] = places.filter((place:any)=>place.location).map((place:any)=>({
+        name:koreanPlaceText(place.displayName, hotelQuery.trim()),
+        display_name:koreanPlaceText(place.formattedAddress, place.formattedAddress || "일본 현지 주소"),
+        lat:String(place.location.lat()),
+        lon:String(place.location.lng())
+      }));
+      setResults(next);
+      if (!next.length) setRouteError("검색 결과가 없어요. 숙소명 또는 일본 주소를 조금 더 자세히 입력해 주세요.");
     } catch {
-      setRouteError("숙소 검색에 실패했어요. 일본어 숙소명이나 전체 주소로 다시 검색해 주세요.");
+      setRouteError("숙소 검색에 실패했어요. 숙소명이나 일본 주소로 다시 검색해 주세요.");
     } finally {
       setSearching(false);
     }
   };
 
   const useCurrentLocation = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((position) => {
-      const next = {
-        name:"현재 위치", address:"휴대폰에서 확인한 현재 위치",
-        lat:position.coords.latitude, lng:position.coords.longitude
-      };
-      setHotel(next);
-      localStorage.setItem("inuyama-hotel", JSON.stringify(next));
-      setOriginId("hotel");
-      setSheet("route");
-      mapRef.current?.setCenter({lat:next.lat,lng:next.lng});
-      mapRef.current?.setZoom(16);
-    }, () => setRouteError("위치 권한을 허용하면 현재 위치를 사용할 수 있어요."));
+    updateCurrentLocation(true, true);
   };
 
   const calculateFallback = (a: Point, b: Point): RouteInfo => {
@@ -829,7 +865,7 @@ export default function Home() {
               <input value={hotelQuery} onChange={(e)=>setHotelQuery(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&searchHotel()} placeholder="숙소명 또는 일본 주소 입력"/>
               <button onClick={searchHotel}>{searching ? "검색 중" : "검색"}</button>
             </div>
-            <button className="current-location" onClick={useCurrentLocation}><LocateFixed size={18}/><div><b>현재 위치 사용</b><small>숙소에 도착한 뒤 등록할 때 편해요</small></div></button>
+            <button className="current-location" onClick={useCurrentLocation}><LocateFixed size={18}/><div><b>현재 위치 지도에 표시</b><small>이 기기의 위치를 빨간 점으로 표시하며 숙소로 저장하지 않아요</small></div></button>
             <div className="search-results">
               {results.map((result, index) => <button key={`${result.lat}-${index}`} onClick={() => chooseHotel(result)}><MapPin size={17}/><div><b>{result.name || result.display_name.split(",")[0]}</b><small>{result.display_name}</small></div></button>)}
             </div>
