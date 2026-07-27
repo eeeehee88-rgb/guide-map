@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
-type Category = "전체" | "맛집" | "카페" | "역사";
+type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사";
 type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
@@ -38,7 +38,7 @@ const station: Point = {
   lat:35.3802772, lng:136.9457636, color:"#3f6bb1", hours:"", description:"여행의 기본 출발점", tip:"", query:"犬山駅"
 };
 
-const categories: Category[] = ["전체", "맛집", "카페", "역사"];
+const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"];
 
 function distanceText(km: number) {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
@@ -109,6 +109,7 @@ export default function Home() {
   const markerLayerRef = useRef<any[]>([]);
   const routeLayerRef = useRef<any>(null);
   const [googleReady, setGoogleReady] = useState(false);
+  const [mapsKey, setMapsKey] = useState("");
   const [category, setCategory] = useState<Category>("전체");
   const [selected, setSelected] = useState<Point>(spots[0]);
   const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel">("places");
@@ -142,7 +143,9 @@ export default function Home() {
   } : null;
   const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || station;
-  const visibleSpots = category === "전체" ? spots : spots.filter((p) => p.category === category);
+  const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
+  const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
+  const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
 
   useEffect(() => {
     const saved = localStorage.getItem("inuyama-hotel");
@@ -174,6 +177,7 @@ export default function Home() {
         setRouteError("Google 지도 키를 불러오지 못했어요.");
         return;
       }
+      setMapsKey(key);
       await new Promise<void>((resolve, reject) => {
         const callback = `initInuyamaMap${Date.now()}`;
         (window as any)[callback] = () => {
@@ -239,7 +243,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces, ...guideRecommendations]
+    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const marker = new google.maps.Marker({
@@ -353,6 +357,7 @@ export default function Home() {
       localStorage.setItem("travel-search-area", travelArea.trim());
       setPlaceResults([]);
       setGuideRecommendations([]);
+      setCategory("전체");
       await buildAreaGuide(areaResults[0].geometry.location);
     } catch {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
@@ -391,7 +396,7 @@ export default function Home() {
         { label:"전통시장", query:"전통시장 상점가", color:"#d88b24" },
         { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
       ];
-      const batches = await Promise.all(types.map(async (type) => {
+      const batches = await Promise.allSettled(types.map(async (type) => {
         const { places } = await Place.searchByText({
           textQuery:`${travelArea.trim()} ${type.query}`,
           fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
@@ -414,7 +419,10 @@ export default function Home() {
           };
         });
       }));
-      setGuideRecommendations(batches.flat().filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index));
+      const next = batches.flatMap((batch) => batch.status === "fulfilled" ? batch.value : [])
+        .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
+      if (!next.length) throw new Error();
+      setGuideRecommendations(next);
     } catch {
       setRouteError("지역 추천 정보를 만들지 못했어요. Google Places 할당량을 확인한 뒤 다시 시도해 주세요.");
     } finally {
@@ -705,19 +713,19 @@ export default function Home() {
                   ? [...savedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
                   : savedPlaces.length ? savedPlaces : spots.slice(0,8);
                 const mapPlaces = guidePlaces.slice(0,20);
-                const minLat = Math.min(...guidePlaces.map((p)=>p.lat)), maxLat = Math.max(...guidePlaces.map((p)=>p.lat));
-                const minLng = Math.min(...guidePlaces.map((p)=>p.lng)), maxLng = Math.max(...guidePlaces.map((p)=>p.lng));
+                const markerLabels = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                const markerParams = mapPlaces.map((point,index) =>
+                  `&markers=${encodeURIComponent(`color:0x${point.color.replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
+                ).join("");
+                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
+                const hasSubway = /나고야|도쿄|오사카|교토|삿포로|후쿠오카|센다이|고베|요코하마|히로시마/i.test(travelArea);
+                const transitMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(`${travelArea} 일본`)}&zoom=12&size=640x360&scale=2&language=ko&region=JP&maptype=roadmap&style=${encodeURIComponent("feature:transit.line|element:geometry|color:0x245fbd|weight:5")}&style=${encodeURIComponent("feature:transit.station|visibility:on")}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 return <>
                   <article className="guide-page guide-cover">
                     <div className="guide-title"><div><small>MY FAMILY TRAVEL GUIDE</small><h2>{travelArea || "일본"} 여행 지도</h2><p>저장한 장소를 한눈에 보는 우리 가족 맞춤 가이드</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
                     <div className="guide-map-board">
-                      <div className="guide-grid"/>
-                      {mapPlaces.map((point,index) => {
-                        const left = 8 + ((point.lng-minLng)/(maxLng-minLng || 1))*82;
-                        const top = 9 + (1-(point.lat-minLat)/(maxLat-minLat || 1))*76;
-                        return <div className="guide-map-pin" key={point.id} style={{left:`${left}%`,top:`${top}%`,background:point.color}}><b>{index+1}</b><span>{point.name}</span></div>;
-                      })}
+                      {staticMapUrl ? <img src={staticMapUrl} alt={`${travelArea} 추천 장소 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">지도를 불러오는 중입니다.</div>}
                     </div>
                     <div className="guide-index">
                       {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
@@ -743,12 +751,22 @@ export default function Home() {
                     </div>
                   </article>
 
+                  {hasSubway && <article className="guide-page guide-transit-page">
+                    <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·철도 지도</h2><span>{dateText}</span></div>
+                    <p className="transit-intro">추천 장소 사이를 이동할 때 활용할 수 있도록 주요 철도·지하철 노선을 표시했습니다.</p>
+                    <div className="guide-transit-map">
+                      {transitMapUrl ? <img src={transitMapUrl} alt={`${travelArea} 지하철과 철도 지도`} crossOrigin="anonymous"/> : <div className="guide-map-loading">교통 지도를 불러오는 중입니다.</div>}
+                    </div>
+                    <div className="transit-tips"><b>교통 이용 팁</b><span>교통카드를 사용하면 환승과 결제가 편리해요.</span><span>아이와 할머니가 함께 이동할 때는 엘리베이터 출구를 먼저 확인하세요.</span><span>정확한 막차와 운행 변경 정보는 방문 당일 확인해 주세요.</span></div>
+                  </article>}
+
                   <article className="guide-page guide-food-page">
                     <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
                     {["관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"].map((group) => {
                       const items = guidePlaces.filter((point)=>guideGroup(point)===group);
                       if (!items.length) return null;
                       return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
+                        {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <b>{index+1}. {point.name}</b><small>{point.hours || "방문 전 운영시간 확인"}</small><p>{point.description}</p>
                       </article>)}</div></section>;
                     })}
