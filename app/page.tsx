@@ -44,6 +44,12 @@ function distanceText(km: number) {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
 }
 
+function pointDistanceKm(a:{lat:number;lng:number}, b:{lat:number;lng:number}) {
+  const dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+  return 6371*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
 const placeTranslations: [string, string][] = [
   ["犬山城下町", "이누야마 성하마을"], ["犬山城", "이누야마성"], ["犬山駅", "이누야마역"],
   ["三光稲荷神社", "산코 이나리 신사"], ["針綱神社", "하리쓰나 신사"], ["成田山名古屋別院大聖寺", "나리타산 나고야 별원 다이쇼지"],
@@ -85,8 +91,9 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const summarySource = typeof place.editorialSummary === "string" ? place.editorialSummary : place.editorialSummary?.text;
   const ratingText = rating ? ` Google 이용자 평점은 ${rating.toFixed(1)}점${reviewCount ? `, 후기 ${reviewCount.toLocaleString("ko-KR")}개` : ""}입니다.` : "";
   const description = koreanPlaceText(summarySource, `${placeType}입니다.${ratingText}`);
+  const localizedName = koreanPlaceText(place.displayName, "");
   return {
-    name:koreanPlaceText(place.displayName, fallbackName),
+    name:localizedName || place.displayName || fallbackName,
     address, placeType, rating, reviewCount, hours, description,
     businessStatus:place.businessStatus === "OPERATIONAL" ? "영업 중인 장소" : undefined
   };
@@ -136,16 +143,19 @@ export default function Home() {
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
+  const [areaPoint, setAreaPoint] = useState<Point | null>(null);
 
   const hotelPoint: Point | null = hotel ? {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
     color:"#7a5caf", hours:"", description:"내가 등록한 숙소", tip:"", query:hotel.address
   } : null;
-  const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
-  const pointById = (id: string) => allPoints.find((p) => p.id === id) || station;
+  const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
+  const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
   const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
   const visibleSpots = category === "전체" ? recommendationPool : recommendationPool.filter((p) => guideGroup(p) === category);
+  const regionalSavedPlaces = areaPoint ? savedPlaces.filter((point)=>pointDistanceKm(areaPoint,point)<=45) : savedPlaces;
+  const hasSubwayArea = /나고야|도쿄|오사카|교토|삿포로|후쿠오카|센다이|고베|요코하마|히로시마/i.test(travelArea);
 
   useEffect(() => {
     const saved = localStorage.getItem("inuyama-hotel");
@@ -243,7 +253,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...regionalSavedPlaces]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const marker = new google.maps.Marker({
@@ -274,7 +284,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, travelArea]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -382,6 +392,15 @@ export default function Home() {
       }
       mapRef.current?.setCenter(center);
       mapRef.current?.setZoom(13);
+      const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
+      const centerLng = typeof center.lng === "function" ? center.lng() : center.lng;
+      const nextAreaPoint:Point = {
+        id:"area-center", name:`${travelArea.trim()} 중심`, sub:`${travelArea.trim()} 여행 기준 위치`,
+        category:"검색", lat:centerLat, lng:centerLng, color:"#174da4", hours:"",
+        description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"", query:`${travelArea.trim()} 일본`
+      };
+      setAreaPoint(nextAreaPoint);
+      setOriginId("area-center");
       localStorage.setItem("travel-search-area", travelArea.trim());
       const { Place } = await google.maps.importLibrary("places");
       const types = [
@@ -423,6 +442,10 @@ export default function Home() {
         .filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index);
       if (!next.length) throw new Error();
       setGuideRecommendations(next);
+      setDestinationId(next[0].id);
+      routeLayerRef.current?.setMap(null);
+      routeLayerRef.current = null;
+      setRoute(null);
     } catch {
       setRouteError("지역 추천 정보를 만들지 못했어요. Google Places 할당량을 확인한 뒤 다시 시도해 주세요.");
     } finally {
@@ -677,9 +700,9 @@ export default function Home() {
               <button className={mode==="drive"?"active":""} onClick={()=>setMode("drive")}><Car size={17}/>자동차</button>
             </div>
             <div className="route-selects">
-              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}><option value="station">이누야마역</option>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}{savedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
               <div className="route-line"/>
-              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}<option value="station">이누야마역</option>{spots.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}{savedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
             </div>
             <button className="calculate-button" onClick={getRoute} disabled={routeLoading}>{routeLoading ? "경로 계산 중…" : <><Navigation size={18}/> 이동시간 계산하기</>}</button>
             {route && <div className="route-summary"><div><Clock3/><span><small>예상 이동시간</small><b>약 {route.minutes}분</b></span></div><div><Navigation/><span><small>이동거리</small><b>{distanceText(route.distance)}</b></span></div></div>}
@@ -704,21 +727,22 @@ export default function Home() {
               <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
               <button onClick={()=>buildAreaGuide()} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
+              {hasSubwayArea && <button className="transit-jump" onClick={()=>document.getElementById("guide-transit-map")?.scrollIntoView({behavior:"smooth"})}>지하철 노선도 보기</button>}
               {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
             <div className="travel-guide" ref={guideRef}>
               {(() => {
                 const guidePlaces = guideRecommendations.length
-                  ? [...savedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
-                  : savedPlaces.length ? savedPlaces : spots.slice(0,8);
+                  ? [...regionalSavedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
+                  : regionalSavedPlaces.length ? regionalSavedPlaces : isInuyamaArea ? spots.slice(0,8) : [];
                 const mapPlaces = guidePlaces.slice(0,20);
                 const markerLabels = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
                 const markerParams = mapPlaces.map((point,index) =>
                   `&markers=${encodeURIComponent(`color:0x${point.color.replace("#","")}|label:${markerLabels[index] || "0"}|${point.lat},${point.lng}`)}`
                 ).join("");
-                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
-                const hasSubway = /나고야|도쿄|오사카|교토|삿포로|후쿠오카|센다이|고베|요코하마|히로시마/i.test(travelArea);
+                const mapCenter = areaPoint ? `${areaPoint.lat},${areaPoint.lng}` : `${travelArea} 일본`;
+                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=13&size=640x300&scale=2&language=ko&region=JP&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const transitMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(`${travelArea} 일본`)}&zoom=12&size=640x360&scale=2&language=ko&region=JP&maptype=roadmap&style=${encodeURIComponent("feature:transit.line|element:geometry|color:0x245fbd|weight:5")}&style=${encodeURIComponent("feature:transit.station|visibility:on")}&key=${encodeURIComponent(mapsKey)}` : "";
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
                 return <>
@@ -751,7 +775,7 @@ export default function Home() {
                     </div>
                   </article>
 
-                  {hasSubway && <article className="guide-page guide-transit-page">
+                  {hasSubwayArea && <article id="guide-transit-map" className="guide-page guide-transit-page">
                     <div className="guide-page-title"><small>SUBWAY & RAIL GUIDE</small><h2>{travelArea} 지하철·철도 지도</h2><span>{dateText}</span></div>
                     <p className="transit-intro">추천 장소 사이를 이동할 때 활용할 수 있도록 주요 철도·지하철 노선을 표시했습니다.</p>
                     <div className="guide-transit-map">
