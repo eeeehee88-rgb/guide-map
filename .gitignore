@@ -2,5 +2,6 @@
 .vinext/
 .wrangler/
 node_modules/
+.next/
 .sites-runtime/
 npm-debug.log*
