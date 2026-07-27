@@ -95,6 +95,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
 function guideGroup(point:Point) {
   if (point.category !== "검색") return point.category;
   const type = point.placeType || "";
+  if (["관광","맛집","카페","쇼핑","주류","이자카야·술집","온천·휴식","디저트","전통시장","아이와 함께"].includes(type)) return type;
   if (/식당|음식|라멘|요리/.test(type)) return "맛집";
   if (/카페|커피|디저트|제과/.test(type)) return "카페";
   if (/쇼핑|백화점|상점|시장/.test(type)) return "쇼핑";
@@ -139,7 +140,7 @@ export default function Home() {
     id:"hotel", name:hotel.name, sub:hotel.address, category:"숙소", lat:hotel.lat, lng:hotel.lng,
     color:"#7a5caf", hours:"", description:"내가 등록한 숙소", tip:"", query:hotel.address
   } : null;
-  const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults];
+  const allPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || station;
   const visibleSpots = category === "전체" ? spots : spots.filter((p) => p.category === category);
 
@@ -238,7 +239,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces]
+    const markerPoints = [station, ...(hotelPoint ? [hotelPoint] : []), ...visibleSpots, ...placeResults, ...savedPlaces, ...guideRecommendations]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const marker = new google.maps.Marker({
@@ -269,7 +270,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -351,6 +352,8 @@ export default function Home() {
       mapRef.current?.setZoom(13);
       localStorage.setItem("travel-search-area", travelArea.trim());
       setPlaceResults([]);
+      setGuideRecommendations([]);
+      await buildAreaGuide(areaResults[0].geometry.location);
     } catch {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
     } finally {
@@ -358,16 +361,20 @@ export default function Home() {
     }
   };
 
-  const buildAreaGuide = async () => {
+  const buildAreaGuide = async (providedCenter?: any) => {
     if (!travelArea.trim()) return;
     setGuideLoading(true);
+    setGuideRecommendations([]);
     setRouteError("");
     try {
       const google = (window as any).google;
-      const geocoder = new google.maps.Geocoder();
-      const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
-      if (!areaResults?.[0]) throw new Error();
-      const center = areaResults[0].geometry.location;
+      let center = providedCenter;
+      if (!center?.lat) {
+        const geocoder = new google.maps.Geocoder();
+        const { results:areaResults } = await geocoder.geocode({ address:`${travelArea.trim()} 일본`, language:"ko", region:"JP" });
+        if (!areaResults?.[0]) throw new Error();
+        center = areaResults[0].geometry.location;
+      }
       mapRef.current?.setCenter(center);
       mapRef.current?.setZoom(13);
       localStorage.setItem("travel-search-area", travelArea.trim());
@@ -377,7 +384,12 @@ export default function Home() {
         { label:"맛집", query:"현지인 인기 맛집", color:"#ef6a4c" },
         { label:"카페", query:"인기 카페 디저트", color:"#c56892" },
         { label:"쇼핑", query:"쇼핑 백화점 전통시장", color:"#e54473" },
-        { label:"온천·휴식", query:"온천 스파 가족 휴식", color:"#6b55b5" }
+        { label:"주류", query:"사케 위스키 주류 전문점", color:"#8052a5" },
+        { label:"이자카야·술집", query:"현지인 이자카야 술집", color:"#a65068" },
+        { label:"온천·휴식", query:"온천 스파 가족 휴식", color:"#6b55b5" },
+        { label:"디저트", query:"유명 디저트 베이커리", color:"#d36a9a" },
+        { label:"전통시장", query:"전통시장 상점가", color:"#d88b24" },
+        { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
       ];
       const batches = await Promise.all(types.map(async (type) => {
         const { places } = await Place.searchByText({
@@ -385,9 +397,9 @@ export default function Home() {
           fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos"],
           locationBias:{ center, radius:30000 },
           language:"ko",
-          maxResultCount:4
+          maxResultCount:5
         });
-        return places.filter((place:any)=>place.location).slice(0,3).map((place:any,index:number) => {
+        return places.filter((place:any)=>place.location).slice(0,4).map((place:any,index:number) => {
           const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
@@ -683,7 +695,7 @@ export default function Home() {
             <div className="guide-recommend-panel">
               <div><small>관광·맛집·카페·쇼핑·온천을 한 번에 찾아드려요</small><b>지역 전체 추천 가이드 만들기</b></div>
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
-              <button onClick={buildAreaGuide} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
+              <button onClick={()=>buildAreaGuide()} disabled={guideLoading}>{guideLoading ? "추천 장소 찾는 중…" : <><Search size={16}/>전체 추천 만들기</>}</button>
               {guideRecommendations.length > 0 && <p>{travelArea} 추천 장소 {guideRecommendations.length}곳과 저장한 장소를 함께 반영했습니다.</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
@@ -692,6 +704,7 @@ export default function Home() {
                 const guidePlaces = guideRecommendations.length
                   ? [...savedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
                   : savedPlaces.length ? savedPlaces : spots.slice(0,8);
+                const mapPlaces = guidePlaces.slice(0,20);
                 const minLat = Math.min(...guidePlaces.map((p)=>p.lat)), maxLat = Math.max(...guidePlaces.map((p)=>p.lat));
                 const minLng = Math.min(...guidePlaces.map((p)=>p.lng)), maxLng = Math.max(...guidePlaces.map((p)=>p.lng));
                 const dateText = guideStart ? `${guideStart.replaceAll("-",". ")}${guideEnd ? ` ~ ${guideEnd.replaceAll("-",". ")}` : ""}` : "여행 날짜를 입력해 주세요";
@@ -700,14 +713,14 @@ export default function Home() {
                     <div className="guide-title"><div><small>MY FAMILY TRAVEL GUIDE</small><h2>{travelArea || "일본"} 여행 지도</h2><p>저장한 장소를 한눈에 보는 우리 가족 맞춤 가이드</p></div><div className="guide-date"><CalendarDays/><span>{dateText}</span></div></div>
                     <div className="guide-map-board">
                       <div className="guide-grid"/>
-                      {guidePlaces.map((point,index) => {
+                      {mapPlaces.map((point,index) => {
                         const left = 8 + ((point.lng-minLng)/(maxLng-minLng || 1))*82;
                         const top = 9 + (1-(point.lat-minLat)/(maxLat-minLat || 1))*76;
                         return <div className="guide-map-pin" key={point.id} style={{left:`${left}%`,top:`${top}%`,background:point.color}}><b>{index+1}</b><span>{point.name}</span></div>;
                       })}
                     </div>
                     <div className="guide-index">
-                      {guidePlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
+                      {mapPlaces.map((point,index)=><div key={point.id}><b style={{background:point.color}}>{index+1}</b><span>{point.name}</span><small>{guideGroup(point)}</small></div>)}
                     </div>
                   </article>
 
@@ -719,7 +732,7 @@ export default function Home() {
                     </div>
                     <h3 className="guide-section-label">저장한 장소</h3>
                     <div className="guide-card-grid">
-                      {guidePlaces.slice(0,8).map((point,index)=><div className="guide-place-card" key={point.id}>
+                      {guidePlaces.slice(0,12).map((point,index)=><div className="guide-place-card" key={point.id}>
                         <div className="guide-card-head" style={{background:point.color}}><span>{index+1}</span><b>{point.name}</b></div>
                         {point.photoUrl && <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                         <small>{guideGroup(point)} · {point.placeType || point.sub}</small>
@@ -732,7 +745,7 @@ export default function Home() {
 
                   <article className="guide-page guide-food-page">
                     <div className="guide-page-title"><small>LOCAL PICKS & FAMILY TIPS</small><h2>{travelArea || "일본"} 장소별 가이드</h2><span>{dateText}</span></div>
-                    {["맛집","카페","쇼핑","관광","역사"].map((group) => {
+                    {["관광","맛집","카페","디저트","쇼핑","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사"].map((group) => {
                       const items = guidePlaces.filter((point)=>guideGroup(point)===group);
                       if (!items.length) return null;
                       return <section className="guide-group" key={group}><h3>{group}</h3><div>{items.map((point,index)=><article key={point.id}>
