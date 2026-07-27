@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Plus, Printer, Search, TrainFront, Trash2, Users, X
+  Heart, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 
@@ -13,6 +13,7 @@ type Point = {
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
   originalName?: string; originalAddress?: string;
+  reviews?: string[];
   photoUrl?: string;
   recommendedMenu?: string;
 };
@@ -22,6 +23,10 @@ type TripProfile = { travelers:Traveler[]; startDate:string; endDate:string };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
 type TransitStep = { instruction:string; line?:string; vehicle?:string; departure?:string; arrival?:string; stops?:number; minutes:number };
 type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean; transitSteps?:TransitStep[]; transfers?:number };
+type AiPlaceAnalysis = {
+  summary:string; famousItems:string[]; familyFit:string; childTip:string; seniorTip:string;
+  priceGuide:string; waitTip:string; cautions:string[]; confidence:"높음"|"보통"|"낮음"; evidence:string[];
+};
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -256,6 +261,9 @@ export default function Home() {
     {id:"child-5",relation:"여아",age:"5"}
   ]);
   const [tripSaved, setTripSaved] = useState(false);
+  const [aiAnalyses, setAiAnalyses] = useState<Record<string,AiPlaceAnalysis>>({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
@@ -338,6 +346,10 @@ export default function Home() {
         if (parsed.endDate) setGuideEnd(parsed.endDate);
         setTripSaved(true);
       } catch {}
+    }
+    const savedAi = localStorage.getItem("family-trip-ai-place-cache");
+    if (savedAi) {
+      try { setAiAnalyses(JSON.parse(savedAi)); } catch {}
     }
     const loadGoogle = async () => {
       if ((window as any).google?.maps) {
@@ -921,6 +933,54 @@ export default function Home() {
     setSheet("places");
   };
 
+  const analyzeSelectedPlace = async () => {
+    setAiLoading(true);
+    setAiError("");
+    try {
+      let reviews = selected.reviews || [];
+      try {
+        const google = (window as any).google;
+        const { Place } = await google.maps.importLibrary("places");
+        const { places } = await Place.searchByText({
+          textQuery:`${selected.originalName || selected.name} ${selected.sub}`,
+          fields:["id","displayName","formattedAddress","reviews","editorialSummary"],
+          language:"ko",
+          maxResultCount:1
+        });
+        const place = places?.[0];
+        reviews = (place?.reviews || []).map((review:any)=>{
+          const text = typeof review.text === "string" ? review.text : review.text?.text;
+          return text ? `${review.rating ? `${review.rating}점 · ` : ""}${text}` : "";
+        }).filter(Boolean);
+      } catch {}
+      const response = await fetch("/api/ai-place",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          place:{
+            name:selected.name, originalName:selected.originalName, category:guideGroup(selected),
+            address:selected.sub, description:selected.description, hours:selected.hours,
+            rating:selected.rating, reviews
+          },
+          trip:{
+            area:travelArea,
+            dates:tripDays ? `${guideStart}~${guideEnd} (${tripDays.nights}박 ${tripDays.days}일)` : "미등록",
+            travelers:travelers.map(({relation,age})=>({relation,age}))
+          }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.analysis) throw new Error(data.error || "AI 분석에 실패했어요.");
+      const next = {...aiAnalyses,[selected.id]:data.analysis};
+      setAiAnalyses(next);
+      localStorage.setItem("family-trip-ai-place-cache",JSON.stringify(next));
+    } catch (error:any) {
+      setAiError(error?.message || "AI 분석을 불러오지 못했어요.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <main
       className="mobile-app"
@@ -988,6 +1048,26 @@ export default function Home() {
               </button>
               <a href={selected.query.startsWith("http") ? selected.query : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
+            <button className="ai-analyze-button" onClick={analyzeSelectedPlace} disabled={aiLoading}>
+              <Sparkles size={17}/>{aiLoading ? "DeepSeek가 장소를 분석하는 중…" : aiAnalyses[selected.id] ? "AI 분석 다시 받기" : "AI로 유명 메뉴·가족 팁 분석"}
+            </button>
+            {aiError && <p className="ai-error">{aiError}</p>}
+            {aiAnalyses[selected.id] && (() => {
+              const analysis = aiAnalyses[selected.id];
+              return <div className="ai-place-card">
+                <div className="ai-card-head"><span><Sparkles size={15}/>DeepSeek AI 분석</span><small>근거 신뢰도 {analysis.confidence}</small></div>
+                <p className="ai-summary">{analysis.summary}</p>
+                <div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "유명 메뉴·주문 추천" : "이 장소의 핵심 포인트"}</b><div>{analysis.famousItems?.map((item)=><span key={item}>{item}</span>)}</div></div>
+                <div className="ai-tip-grid">
+                  <div><small>우리 가족 적합도</small><p>{analysis.familyFit}</p></div>
+                  <div><small>아이 동반</small><p>{analysis.childTip}</p></div>
+                  <div><small>할머니 동반</small><p>{analysis.seniorTip}</p></div>
+                  <div><small>가격·대기</small><p>{analysis.priceGuide} · {analysis.waitTip}</p></div>
+                </div>
+                {analysis.cautions?.length>0&&<div className="ai-cautions"><b>확인할 점</b><p>{analysis.cautions.join(" · ")}</p></div>}
+                <small className="ai-disclaimer">Google 장소 정보와 리뷰를 AI가 정리한 참고 정보예요. 메뉴·가격·영업시간은 방문 전에 매장에 확인해 주세요.</small>
+              </div>;
+            })()}
             <div className="spot-strip">
               {visibleSpots.map((spot) => <button key={spot.id} className={selected.id === spot.id ? "active" : ""} onClick={() => {setSelected(spot); mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}><span style={{background:spot.color}}>{spot.name.slice(0,1)}</span><b>{spot.name}</b>{spot.originalName && <em>{spot.originalName}</em>}<small>{spot.sub}</small></button>)}
             </div>
