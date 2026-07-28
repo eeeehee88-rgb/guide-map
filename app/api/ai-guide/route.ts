@@ -28,15 +28,73 @@ function parseModelJson(content:string) {
   }
 }
 
-export async function POST(request: Request) {
-  const key = process.env.DEEPSEEK_API_KEY;
-  if (!key) return Response.json({ error: "AI configuration is required." }, { status: 503 });
+function text(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
 
+function buildFallbackGuide(body:any, places:any[]) {
+  const area = text(body?.trip?.area,"여행지");
+  const familyTips = [
+    "지도 번호와 장소 목록을 맞춰 보며 이동해 주세요.",
+    "운영시간과 휴무일은 방문 직전 Google 지도에서 다시 확인해 주세요.",
+    "아이와 어르신이 함께라면 식사와 카페 휴식 시간을 먼저 확보해 주세요."
+  ];
+  const stops = places.slice(0,7).map((place:any,index:number)=>({
+    id:String(place.id),
+    time:index===0?"오전":index<4?"낮":"오후",
+    reason:text(place.reason || place.description,`${area} 추천 장소입니다.`)
+  }));
+  return {
+    title:`${area} 가족 여행 가이드북`,
+    overview:`${area}에서 실제 지도 좌표가 있는 추천 장소를 번호 순서로 묶은 가족 여행 가이드입니다.`,
+    placeDetails:places.map((place:any)=>({
+      id:String(place.id),
+      description:text(place.description || place.reason,`${text(place.name,"추천 장소")} 방문 전 운영정보를 확인해 주세요.`),
+      items:Array.isArray(place.recommendedItems) && place.recommendedItems.length
+        ? place.recommendedItems.slice(0,4)
+        : [{name:text(place.recommendedMenu || place.category,"대표 항목"),price:text(place.price || place.googlePriceRange || place.googlePriceLevel,"방문 전 확인")}],
+      visitInfo:{
+        hours:text(place.hours,"방문 전 확인"),
+        closed:"방문 전 확인",
+        busyTime:"점심·오후 피크 시간 확인",
+        bestTime:text(place.bestTime,"오전 또는 붐비기 전"),
+        kids:text(place.familyTip,"아이 동반 시 이동거리와 대기시간 확인"),
+        reservation:"필요 시 방문 전 확인",
+        payment:"현금/카드 가능 여부 확인"
+      }
+    })),
+    days:[{day:1,title:`${area} 핵심 동선`,stops,tips:familyTips}],
+    familyTips,
+    weatherBackup:["실내 카페, 쇼핑, 박물관형 장소를 우선 확인해 주세요."],
+    localTips:["사진은 오전 빛이 부드러운 시간대가 좋습니다.","인기 맛집은 혼잡 시간 전후로 방문해 주세요."],
+    checklist:["번호와 설명 일치 확인","운영시간 재확인","결제수단 확인","비오는 날 대체코스 확인"]
+  };
+}
+
+function normalizeGuide(raw:any, fallback:any) {
+  return {
+    ...fallback,
+    ...(raw && typeof raw === "object" ? raw : {}),
+    title:text(raw?.title,fallback.title),
+    overview:text(raw?.overview,fallback.overview),
+    placeDetails:Array.isArray(raw?.placeDetails) && raw.placeDetails.length ? raw.placeDetails : fallback.placeDetails,
+    days:Array.isArray(raw?.days) && raw.days.length ? raw.days : fallback.days,
+    familyTips:Array.isArray(raw?.familyTips) && raw.familyTips.length ? raw.familyTips : fallback.familyTips,
+    weatherBackup:Array.isArray(raw?.weatherBackup) && raw.weatherBackup.length ? raw.weatherBackup : fallback.weatherBackup,
+    localTips:Array.isArray(raw?.localTips) && raw.localTips.length ? raw.localTips : fallback.localTips,
+    checklist:Array.isArray(raw?.checklist) && raw.checklist.length ? raw.checklist : fallback.checklist
+  };
+}
+
+export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const places = Array.isArray(body?.places) ? body.places.slice(0, 18) : [];
   if (!body?.trip || !places.length) {
     return Response.json({ error: "Trip and recommended places are required." }, { status: 400 });
   }
+  const fallbackGuide = buildFallbackGuide(body, places);
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) return Response.json({ guide: fallbackGuide, fallback: true, reason: "missing_api_key" });
 
   const cacheKey = await stableHash({
     version: 3,
@@ -59,36 +117,36 @@ export async function POST(request: Request) {
     timeStyle: "short",
   }).format(new Date());
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(18_000),
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: "deepseek-v4-flash",
-      thinking: { type: "disabled" },
-      response_format: { type: "json_object" },
-      temperature: 0.2,
-      max_tokens: 3200,
-      messages: [
-        {
-          role: "system",
-          content: GUIDEBOOK_SYSTEM_PROMPT,
-        },
-        { role: "user", content: JSON.stringify({ currentTimeKST: koreaTime, trip: body.trip, hotel: body.hotel, places }) },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    return Response.json({ error: "AI guidebook could not be generated." }, { status: response.status });
-  }
-
-  const data = await response.json();
   try {
-    const guide = parseModelJson(data.choices?.[0]?.message?.content || "{}");
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      signal: AbortSignal.timeout(28_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "deepseek-v4-flash",
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 3000,
+        messages: [
+          {
+            role: "system",
+            content: GUIDEBOOK_SYSTEM_PROMPT,
+          },
+          { role: "user", content: JSON.stringify({ currentTimeKST: koreaTime, trip: body.trip, hotel: body.hotel, places }) },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      return Response.json({ guide: fallbackGuide, fallback: true, reason: `ai_status_${response.status}` });
+    }
+
+    const data = await response.json();
+    const guide = normalizeGuide(parseModelJson(data.choices?.[0]?.message?.content || "{}"), fallbackGuide);
     await writeServerCache("ai-guide", cacheKey, guide, 60 * 60 * 24 * 14);
     return Response.json({ guide, cacheHit: false });
   } catch {
-    return Response.json({ error: "AI guidebook JSON could not be parsed." }, { status: 502 });
+    return Response.json({ guide: fallbackGuide, fallback: true, reason: "ai_parse_or_timeout" });
   }
 }
