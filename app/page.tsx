@@ -499,6 +499,7 @@ export default function Home() {
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
+  const [guidebookPlaces, setGuidebookPlaces] = useState<Point[]>([]);
   const [recommendationError, setRecommendationError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -1169,6 +1170,7 @@ export default function Home() {
       localStorage.setItem("travel-search-area", travelArea.trim());
       setPlaceResults([]);
       setGuideRecommendations([]);
+      setGuidebookPlaces([]);
       setAiGuidePlan(null);
       setAiGuideArea("");
       aiGuidePlanRef.current=null;
@@ -1750,6 +1752,7 @@ export default function Home() {
     void saveTripToCloud({ travelers, guideStart, guideEnd });
     setAiGuidePlan(null);
     setAiGuideArea("");
+    setGuidebookPlaces([]);
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current="";
     setTripSaved(true);
@@ -1757,6 +1760,92 @@ export default function Home() {
     setSheet("places");
     setSheetCollapsed(false);
     setTimeout(()=>void buildAreaGuide(),0);
+  };
+
+  const buildGuidebookPlaces = async (force=false) => {
+    if (!travelArea.trim()) return [] as Point[];
+    if (!googleReady) throw new Error("Google 지도를 먼저 불러와야 해요.");
+    if (!force && guidebookPlaces.length && aiGuideArea===travelArea.trim()) return guidebookPlaces;
+    const google = (window as any).google;
+    const {Place}=await google.maps.importLibrary("places");
+    let center:any = areaPoint ? {lat:areaPoint.lat,lng:areaPoint.lng} : mapRef.current?.getCenter();
+    let bounds:any = areaBounds;
+    let activeCountry=travelCountry || regionHintForArea(travelArea.trim());
+    if (!center || !bounds) {
+      const geocoder = new google.maps.Geocoder();
+      const hint=regionHintForArea(travelArea.trim());
+      const {results}=await geocoder.geocode({
+        address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`,
+        language:"ko",
+        region:hint
+      });
+      if (!results?.[0]) throw new Error("가이드북을 만들 지역을 찾지 못했어요.");
+      activeCountry=geocodeCountry(results[0],hint);
+      center=results[0].geometry.location;
+      bounds=results[0].geometry.viewport;
+      setTravelCountry(activeCountry);
+      setAreaBounds(bounds);
+      const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
+      const centerLng = typeof center.lng === "function" ? center.lng() : center.lng;
+      setAreaPoint({
+        id:"area-center",name:`${travelArea.trim()} 중심`,sub:`${travelArea.trim()} 가이드북 기준 위치`,
+        category:"검색",lat:centerLat,lng:centerLng,color:"#174da4",hours:"",
+        description:`${travelArea.trim()} 가이드북 제작 기준 위치입니다.`,tip:"",
+        query:`${travelArea.trim()} ${activeCountry==="KR"?"대한민국":"일본"}`
+      });
+    }
+    const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
+    const centerLng = typeof center.lng === "function" ? center.lng() : center.lng;
+    const guidebookTypes = [
+      {label:"관광",query:"대표 관광지 명소 성 신사 박물관 공원 사진스팟",color:"#ef8a2f",limit:6},
+      {label:"맛집",query:"대표 맛집 현지 음식 식당 인기 음식점",color:"#df4f42",limit:5},
+      {label:"카페",query:"카페 디저트 베이커리 분위기 좋은 카페",color:"#8c66c3",limit:4},
+      {label:"쇼핑",query:"기념품 쇼핑 전통공예 시장 마트 지역 한정 상품",color:"#2f9b68",limit:5},
+      {label:"전통시장",query:"시장 마켓 상점가 로컬 상점",color:"#2781bd",limit:3},
+      {label:"아이와 함께",query:"아이와 함께 가족 체험 공원 실내 명소",color:"#d9a72f",limit:3}
+    ];
+    const fields=[
+      "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
+      "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange","regularOpeningHours"
+    ];
+    const batches=await Promise.allSettled(guidebookTypes.map(async(type)=>{
+      const {places}=await Place.searchByText({
+        textQuery:`${travelArea.trim()} ${type.query}`,
+        fields,
+        ...(bounds ? {locationRestriction:bounds} : {locationBias:{center:{lat:centerLat,lng:centerLng},radius:30000}}),
+        language:"ko",
+        maxResultCount:Math.min(10,Math.max(type.limit,6))
+      });
+      return places.filter((place:any)=>place.location)
+        .filter((place:any)=>pointDistanceKm(
+          {lat:centerLat,lng:centerLng},
+          {lat:place.location.lat(),lng:place.location.lng()}
+        )<=35)
+        .slice(0,type.limit)
+        .map((place:any,index:number)=>{
+          const details=googlePlaceDetails(place,`${travelArea.trim()} ${type.label} ${index+1}`);
+          return {
+            id:`guidebook-${type.label}-${place.id}`,
+            name:details.name,sub:details.address,category:"검색" as const,
+            lat:place.location.lat(),lng:place.location.lng(),color:type.color,
+            hours:details.hours,description:details.description,listSummary:details.description,
+            tip:`${type.label} 가이드북 후보입니다. 운영시간과 이동 동선을 확인해 방문해 주세요.`,
+            query:place.googleMapsURI || place.displayName || "",
+            placeType:type.label,rating:details.rating,reviewCount:details.reviewCount,businessStatus:details.businessStatus,
+            originalName:details.originalName,originalAddress:details.originalAddress,
+            googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights,
+            photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560}),
+            recommendedMenu:recommendedMenuFor(place.displayName || "",type.label,place.primaryTypeDisplayName),
+            googlePlaceId:place.id
+          } satisfies Point;
+        });
+    }));
+    let points=batches.flatMap((batch)=>batch.status==="fulfilled"?batch.value:[])
+      .filter((point,index,items)=>items.findIndex((item)=>item.googlePlaceId===point.googlePlaceId)===index)
+      .slice(0,24);
+    points=await localizePointNames(points);
+    setGuidebookPlaces(points);
+    return points;
   };
 
   const openAiGuidebook = async (force=false) => {
@@ -1770,11 +1859,10 @@ export default function Home() {
     setRouteError("");
     try {
       const areaChanged=aiGuideArea!==requestedArea;
-      const places = areaChanged || !guideRecommendations.length ? await buildAreaGuide() : guideRecommendations;
-      if (!places?.length) throw new Error("먼저 여행 정보 저장 후 AI 추천 장소를 불러와 주세요.");
+      const places = await buildGuidebookPlaces(force || areaChanged);
+      if (!places?.length) throw new Error("가이드북을 만들 장소 정보를 불러오지 못했어요.");
       if (areaChanged && aiGuidePlanRef.current?.days?.length && aiGuidePlanRef.current.placeDetails?.length && aiGuideAreaRef.current===requestedArea) return;
-      const sourcePlaces=[...regionalSavedPlaces,...places]
-        .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index);
+      const sourcePlaces=places.filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index);
       let enrichedPlaces=sourcePlaces;
       if (force) {
         try {
@@ -1843,8 +1931,7 @@ export default function Home() {
             recommendedMenu:items.length?items.map((item:any)=>item.name).join(" · "):point.recommendedMenu
           };
         };
-        setGuideRecommendations((current)=>current.map(mergeItems));
-        setSavedPlaces((current)=>current.map(mergeItems));
+        setGuidebookPlaces((current)=>current.map(mergeItems));
         setSelected((current)=>mergeItems(current));
       }
       setAiGuidePlan(data.guide);
@@ -2217,17 +2304,15 @@ export default function Home() {
           </div>
           <div className="guide-scroll">
             <div className="guide-recommend-panel">
-              <div><small>등록한 구성원·일정·추천 장소를 모두 반영해요</small><b>AI 가족여행 가이드북</b></div>
-              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&buildAreaGuide()} placeholder="예: 나고야, 교토"/>
+              <div><small>설정 지역을 Google 지도 기준으로 새로 분석해요</small><b>AI 여행잡지 가이드북</b></div>
+              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&openAiGuidebook(true)} placeholder="예: 나고야, 교토"/>
               <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "AI 구성 중…" : <><Sparkles size={16}/>AI 가이드 다시 만들기</>}</button>
               {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가족 구성과 이동 동선을 분석하고 있어요</b><span>추천 장소, 식사, 쇼핑, 휴식 시간을 조합해 가이드북을 만드는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide" ref={guideRef}>
               {(() => {
-                const baseGuidePlaces = guideRecommendations.length
-                  ? [...regionalSavedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
-                  : regionalSavedPlaces.length ? regionalSavedPlaces : [];
+                const baseGuidePlaces = guidebookPlaces.length ? guidebookPlaces : [];
                 const aiStopIds = aiGuidePlan.days.flatMap((day)=>day.stops.map((stop)=>stop.id));
                 const guidePlaces = [...baseGuidePlaces].sort((a,b)=>{
                   const ai=aiStopIds.indexOf(a.id), bi=aiStopIds.indexOf(b.id);
