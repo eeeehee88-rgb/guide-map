@@ -688,7 +688,7 @@ export default function Home() {
     const insideRadius = center ? pointDistanceKm(center, point) <= 20 : true;
     return insideBounds && insideRadius;
   };
-  const recommendationPool = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
+  const recommendationPool = guideLoading ? [] : guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
   const regionalSavedPlaces = savedPlaces.filter(isPointInCurrentArea);
   const regionalPlaceResults = placeResults.filter(isPointInCurrentArea);
   const combinedPlacePool = [...regionalPlaceResults, ...recommendationPool]
@@ -1302,12 +1302,7 @@ export default function Home() {
         aiVisitTip:point.hours || "영업시간과 혼잡도는 방문 전에 확인해 주세요.",
         aiParkingTip:"전용·인근 주차장은 Google 지도에서 확인해 주세요."
       }));
-      setGuideRecommendations(fallbackPoints);
-      setSelected(fallbackPoints[0]);
-      setDestinationId(fallbackPoints[0].id);
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
-      setGuideLoading(false);
-      void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1851,7 +1846,8 @@ export default function Home() {
               <div><b>{category === "전체" ? "가까운 추천 장소" : `${category} 추천`}</b><small>{travelArea} 중심에서 가까운 순서</small></div>
               <span>{listedSpots.length}곳</span>
             </div>
-            <div className="recommendation-list">
+            {guideLoading && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천을 먼저 정리하고 있어요</b><small>추천 결과가 확정되면 사진과 지도 표시를 한 번에 적용합니다.</small></div>}
+            {!guideLoading && <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
                 return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
@@ -1866,7 +1862,7 @@ export default function Home() {
                   <Navigation size={18}/>
                 </button>;
               })}
-            </div>
+            </div>}
             {placeDetailOpen && createPortal(<div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
               <section className="place-detail-popup" role="dialog" aria-modal="true" aria-label={`${selected.name} 상세 정보`} onPointerDown={(event)=>event.stopPropagation()}>
                 <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{placeDisplayName(selected)}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
