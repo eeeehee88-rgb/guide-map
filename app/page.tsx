@@ -7,6 +7,8 @@ import {
   Heart, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
+import type { Session } from "@supabase/supabase-js";
+import { createBrowserSupabase, hasSupabaseConfig } from "./lib/supabase-client";
 
 type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼핑" | "편의점" | "소품샵" | "전통시장" | "주류" | "이자카야·술집" | "온천·휴식" | "아이와 함께" | "역사" | "숙박" | "교통";
 type Point = {
@@ -378,6 +380,7 @@ function subwayLinesFor(area:string) {
 }
 
 export default function Home() {
+  const supabase = useRef(createBrowserSupabase());
   const mapEl = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -434,6 +437,10 @@ export default function Home() {
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [cloudSaving, setCloudSaving] = useState(false);
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
@@ -451,6 +458,79 @@ export default function Home() {
   } : null;
   const allPoints = [station, ...(areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...spots, ...savedPlaces, ...placeResults, ...guideRecommendations, ...routeSearchPoints];
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
+  const authHeaders = (): Record<string, string> =>
+    session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  const currentTripPayload = () => ({
+    hotel,
+    savedPlaces,
+    guideStart,
+    guideEnd,
+    travelers,
+    travelArea,
+    travelCountry,
+  });
+  const saveTripToCloud = async (override?: Partial<ReturnType<typeof currentTripPayload>>) => {
+    if (!session) return;
+    setCloudSaving(true);
+    try {
+      await fetch("/api/trips", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ trip: { ...currentTripPayload(), ...override } }),
+      });
+    } finally {
+      setCloudSaving(false);
+    }
+  };
+  const signInWithEmail = async () => {
+    if (!supabase.current || !authEmail.trim()) {
+      setAuthMessage("Set Supabase env first.");
+      return;
+    }
+    const { error } = await supabase.current.auth.signInWithOtp({
+      email: authEmail.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setAuthMessage(error ? error.message : "Check your email link.");
+  };
+  const signOut = async () => {
+    await supabase.current?.auth.signOut();
+    setSession(null);
+    setAuthMessage("");
+  };
+
+  useEffect(() => {
+    if (!supabase.current) return;
+    supabase.current.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.current.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    window.setTimeout(() => {
+      fetch("/api/trips", { headers: authHeaders(), cache: "no-store" })
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => {
+          if (cancelled || !data?.trip) return;
+          if (data.trip.hotel) setHotel(data.trip.hotel);
+          if (Array.isArray(data.trip.savedPlaces)) setSavedPlaces(data.trip.savedPlaces);
+          if (data.trip.guideStart) setGuideStart(data.trip.guideStart);
+          if (data.trip.guideEnd) setGuideEnd(data.trip.guideEnd);
+          if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
+          if (data.trip.travelArea) setTravelArea(data.trip.travelArea);
+          if (data.trip.travelCountry === "KR" || data.trip.travelCountry === "JP") setTravelCountry(data.trip.travelCountry);
+          setTripSaved(true);
+        })
+        .catch(() => undefined);
+    }, 0);
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
   const isInuyamaArea = /이누야마|犬山/i.test(travelArea);
 
   useEffect(()=>{
@@ -809,6 +889,7 @@ export default function Home() {
     };
     setHotel(next);
     localStorage.setItem("inuyama-hotel", JSON.stringify(next));
+    void saveTripToCloud({ hotel: next });
     setOriginId("hotel");
     setResults([]);
     setHotelQuery("");
@@ -820,6 +901,7 @@ export default function Home() {
   const persistSavedPlaces = (next: Point[]) => {
     setSavedPlaces(next);
     localStorage.setItem("inuyama-saved-places", JSON.stringify(next));
+    void saveTripToCloud({ savedPlaces: next });
   };
 
   const toggleSavedPlace = (point: Point) => {
@@ -1169,11 +1251,11 @@ export default function Home() {
       });
       const aiData = await aiResponse.json();
       if (!aiResponse.ok || !Array.isArray(aiData.result?.recommendations)) throw new Error(aiData.error || "AI 추천 실패");
-      const localizationMap = new Map(
+      const localizationMap = new Map<string, string>(
         (Array.isArray(aiData.result.localizations)?aiData.result.localizations:[])
-          .map((item:any)=>[item.id,String(item.koreanName||"").trim()])
+          .map((item:any)=>[String(item.id),String(item.koreanName||"").trim()])
       );
-      const recommendationMap = new Map(aiData.result.recommendations.map((item:any)=>[item.id,item]));
+      const recommendationMap = new Map<string, any>(aiData.result.recommendations.map((item:any)=>[String(item.id),item]));
       const aiSelected = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
         const ai:any = recommendationMap.get(point.id);
         const localizedName=localizationMap.get(point.id);
@@ -1501,6 +1583,7 @@ export default function Home() {
     }
     const profile:TripProfile = {travelers,startDate:guideStart,endDate:guideEnd};
     localStorage.setItem("family-trip-profile",JSON.stringify(profile));
+    void saveTripToCloud({ travelers, guideStart, guideEnd });
     setAiGuidePlan(null);
     setAiGuideArea("");
     aiGuidePlanRef.current=null;
@@ -1619,6 +1702,27 @@ export default function Home() {
           <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
         </div>
       </header>
+
+      <section className="account-strip">
+        {session?.user ? (
+          <>
+            <span>{session.user.email}</span>
+            <b>{cloudSaving ? "Saving" : "Cloud saved"}</b>
+            <button onClick={signOut}>Sign out</button>
+          </>
+        ) : (
+          <>
+            <input
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              placeholder={hasSupabaseConfig() ? "Email sign in" : "Set Supabase env"}
+              type="email"
+            />
+            <button onClick={signInWithEmail}>Send link</button>
+          </>
+        )}
+      </section>
+      {authMessage && <p className="account-message">{authMessage}</p>}
 
       <section className="mobile-map-wrap">
         <div ref={mapEl} className="mobile-map"/>
