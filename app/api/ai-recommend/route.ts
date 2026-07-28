@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   if (!key) return Response.json({ error: "AI configuration is required." }, { status: 503 });
 
   const body = await request.json().catch(() => null);
-  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0, 8) : [];
+  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0, 14) : [];
   if (!body?.trip || !candidates.length) {
     return Response.json({ error: "Trip and candidate places are required." }, { status: 400 });
   }

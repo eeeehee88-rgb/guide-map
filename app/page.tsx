@@ -14,6 +14,7 @@ type Category = "전체" | "관광" | "맛집" | "카페" | "디저트" | "쇼�
 type Point = {
   id: string; name: string; sub: string; category: Exclude<Category, "전체"> | "숙소" | "검색";
   lat: number; lng: number; color: string; description: string; tip: string; hours: string; query: string;
+  listSummary?: string;
   placeType?: string; rating?: number; reviewCount?: number; businessStatus?: string;
   originalName?: string; originalAddress?: string;
   aiReason?: string; aiPrice?: string; aiFamousItems?: string[]; aiFamilyTip?: string; aiBestTime?: string;
@@ -460,7 +461,7 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v14:${JSON.stringify({
+  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v15:${JSON.stringify({
     area:travelArea.trim(),country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -916,6 +917,7 @@ export default function Home() {
   const mergePointData = (current:Point, incoming:Point) => ({
     ...current,
     ...incoming,
+    listSummary:current.listSummary || incoming.listSummary || current.description || incoming.description,
     photoUrl:incoming.photoUrl || current.photoUrl,
     photoUrls:incoming.photoUrls?.length ? incoming.photoUrls : current.photoUrls,
     detailLoaded:current.detailLoaded || incoming.detailLoaded,
@@ -1217,7 +1219,7 @@ export default function Home() {
             id:`guide-${type.label}-${place.id}`,
             name:details.name, sub:details.address, category:"검색" as const,
             lat:place.location.lat(), lng:place.location.lng(), color:type.color,
-            hours:details.hours, description:details.description,
+            hours:details.hours, description:details.description, listSummary:details.description,
             tip:`${type.label} 분야의 평점과 인지도를 참고한 추천 장소예요.`,
             query:place.googleMapsURI || place.displayName || "",
             placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
@@ -1257,7 +1259,7 @@ export default function Home() {
             return {
               id:`guide-쇼핑-${place.id}`,name:details.name,sub:details.address,category:"검색" as const,
               lat:place.location.lat(),lng:place.location.lng(),color:categoryColors["쇼핑"],
-              hours:details.hours,description:details.description,
+              hours:details.hours,description:details.description,listSummary:details.description,
               tip:retailer.must?"여행 지역 주변에 있으면 반드시 포함하는 쇼핑 장소예요.":"여행 중 활용도가 높은 쇼핑·드럭스토어예요.",
               query:place.googleMapsURI||place.displayName||"",placeType:"쇼핑",
               rating:details.rating,reviewCount:details.reviewCount,businessStatus:details.businessStatus,
@@ -1295,6 +1297,10 @@ export default function Home() {
       }));
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
       fallbackPoints = fallbackPoints.slice(0,60);
+      setGuideRecommendations(fallbackPoints);
+      setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
+      setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
+      void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1305,7 +1311,7 @@ export default function Home() {
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
-          candidates:candidates.slice(0,8).map((point)=>({
+          candidates:candidates.slice(0,14).map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
             rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
             googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
@@ -1354,9 +1360,10 @@ export default function Home() {
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
       const next = aiSelected.slice(0,60);
-      const enhancedRecommendations = next.map((point)=>{
-        const existing=fallbackPoints.find((item)=>item.id===point.id);
-        return existing ? mergePointData(existing,point) : point;
+      const aiPointMap = new Map(next.map((point)=>[point.id,point] as const));
+      const enhancedRecommendations = fallbackPoints.map((point)=>{
+        const updated=aiPointMap.get(point.id);
+        return updated ? mergePointData(point,updated) : point;
       });
       if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
       setAiOverview(aiData.result.overview || "");
@@ -1851,7 +1858,7 @@ export default function Home() {
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
                     <b>{placeDisplayName(spot)}</b>
-                    <p className="recommendation-summary">{spot.description}</p>
+                    <p className="recommendation-summary">{spot.listSummary || spot.description}</p>
                     <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
                     <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
                   </div>
