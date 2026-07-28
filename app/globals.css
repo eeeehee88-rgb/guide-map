@@ -374,3 +374,38 @@ body:has(.place-detail-overlay){overflow:hidden}
   .atlas-tip-row{height:42px}
   .guide-recommend-panel{position:sticky;left:0;width:calc(100vw - 16px);z-index:5}
 }
+
+/* Account and place detail polish */
+.mobile-app.no-account .mobile-map-wrap{height:calc(100dvh - 189px)}
+.mobile-app.no-account .locate-button{top:54px}
+.mobile-app.no-account .account-message{display:none}
+
+.place-detail-popup-scroll{background:#fff;padding:0 0 calc(28px + env(safe-area-inset-bottom))}
+.place-detail-popup .place-photo-section{margin:0;padding:14px 16px 10px}
+.place-detail-popup .selected-place{margin:0;padding:17px 16px 18px;border:0;border-top:1px solid rgba(227,223,214,.9);border-left:0;border-radius:0;background:#fff}
+.place-detail-popup .place-dot{box-shadow:0 0 0 5px color-mix(in srgb,var(--place-color) 12%,#fff)}
+.place-detail-popup .place-main p{margin:10px 0 0}
+.place-detail-popup .place-meta{margin-top:12px}
+.place-detail-popup .family-tip,.place-detail-popup .place-price,.place-detail-popup .place-main .place-hours{border-radius:10px}
+.place-contact-row,.google-detail-block,.weekly-hours,.place-offerings,.place-insight-loading,.place-detail-popup .ai-place-card{margin:0 16px;padding:15px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:#fff;box-shadow:none}
+.place-contact-row{grid-template-columns:1fr 1fr;gap:0;padding:0;border-top:1px solid var(--line)}
+.place-contact-row a{padding:14px 0;border:0;border-radius:0;background:#fff}
+.place-contact-row a+a{padding-left:14px;border-left:1px solid var(--line)}
+.google-detail-block h3,.place-offerings>div:first-child span{font-size:13px}
+.google-detail-block h3{margin:0 0 11px;color:#28352f}
+.detail-chip-list{gap:7px}.detail-chip-list span{background:#eef5f2;color:#315f54}
+.weekly-hours summary{list-style:none}.weekly-hours summary::-webkit-details-marker{display:none}
+.weekly-hours p{padding:7px 0}
+.review-block blockquote{margin:0;padding:11px 0;border:0;border-top:1px dashed #dce4df;border-radius:0;background:transparent}
+.review-block blockquote:first-of-type{border-top:0}
+.place-offerings>div:first-child{margin-bottom:2px}
+.place-offerings article{padding:10px 0;border-top:1px dashed #ded6e8}
+.place-detail-popup .ai-place-card{background:#fff}
+.place-detail-popup .ai-tip-grid>div{background:#fbfaf7}
+.place-detail-popup .place-actions{position:sticky;bottom:0;z-index:2;margin:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}
+.place-detail-popup .ai-disclaimer{margin-bottom:2px}
+
+@media(max-width:380px){
+  .place-contact-row{grid-template-columns:1fr}
+  .place-contact-row a+a{padding-left:0;border-left:0;border-top:1px solid var(--line)}
+}

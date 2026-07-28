@@ -1686,9 +1686,11 @@ export default function Home() {
     }
   };
 
+  const authAvailable = hasSupabaseConfig();
+
   return (
     <main
-      className="mobile-app"
+      className={`mobile-app ${authAvailable ? "has-account" : "no-account"}`}
       onPointerDown={(event) => {
         const target = event.target as HTMLElement;
         if (target.closest(".bottom-sheet, .bottom-tabs, .guide-overlay")) return;
@@ -1703,7 +1705,7 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="account-strip">
+      {authAvailable && <section className="account-strip">
         {session?.user ? (
           <>
             <span>{session.user.email}</span>
@@ -1715,13 +1717,13 @@ export default function Home() {
             <input
               value={authEmail}
               onChange={(event) => setAuthEmail(event.target.value)}
-              placeholder={hasSupabaseConfig() ? "Email sign in" : "Set Supabase env"}
+              placeholder="Email sign in"
               type="email"
             />
             <button onClick={signInWithEmail}>Send link</button>
           </>
         )}
-      </section>
+      </section>}
       {authMessage && <p className="account-message">{authMessage}</p>}
 
       <section className="mobile-map-wrap">
