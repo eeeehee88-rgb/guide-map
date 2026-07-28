@@ -40,7 +40,8 @@ type AiGuidePlan = {
   title:string; overview:string;
   days:{day:number;title:string;stops:{id:string;time:string;reason:string}[];tips:string[]}[];
   familyTips:string[]; weatherBackup:string[];
-  placeDetails?:{id:string;description?:string;items?:{name:string;price:string}[]}[];
+  localTips?:string[]; checklist?:string[];
+  placeDetails?:{id:string;description?:string;items?:{name:string;price:string}[];visitInfo?:Record<string,string>}[];
 };
 
 const spots: Point[] = [
@@ -1809,13 +1810,18 @@ export default function Home() {
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
           hotel,
-          places:enrichedPlaces.slice(0,12).map((point)=>({
-            id:point.id,name:point.name,category:guideGroup(point),lat:point.lat,lng:point.lng,
-            reason:point.aiReason,price:point.aiPrice,famousItems:point.aiFamousItems,
+          places:enrichedPlaces.slice(0,18).map((point,index)=>({
+            id:point.id,mapNumber:index+1,
+            name:point.name,originalName:point.originalName,category:guideGroup(point),lat:point.lat,lng:point.lng,
+            address:point.sub,originalAddress:point.originalAddress,rating:point.rating,reviewCount:point.reviewCount,
+            reason:point.aiReason,price:normalizePriceForCountry(point.aiPrice,point.placeType||guideGroup(point),travelCountry),famousItems:point.aiFamousItems,
             recommendedItems:point.aiRecommendedItems,recommendedMenu:point.recommendedMenu,
             visitTip:point.aiVisitTip,parkingTip:point.aiParkingTip,bestTime:point.aiBestTime,
-            description:point.description,googlePriceRange:point.googlePriceRange,
-            reviewHighlights:point.reviewHighlights,familyTip:point.aiFamilyTip,hours:point.hours
+            description:point.description,googlePriceRange:normalizePriceForCountry(point.googlePriceRange,point.placeType||guideGroup(point),travelCountry),
+            googlePriceLevel:normalizePriceForCountry(point.googlePriceLevel,point.placeType||guideGroup(point),travelCountry),
+            reviewHighlights:point.reviewHighlights,detailedReviews:point.detailedReviews?.map((review)=>review.text),
+            familyTip:point.aiFamilyTip,hours:point.hours,openNow:point.openNow,businessStatus:point.businessStatus,
+            photoAvailable:Boolean(point.photoUrl || point.photoUrls?.length),googleMapsUrl:point.query
           }))
         })
       });
@@ -2299,7 +2305,7 @@ export default function Home() {
                         {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{normalizePriceForCountry(point.aiPrice,point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
                       </aside>
                     </div>
-                    <section className="atlas-bottom-info"><div><h3>추천 이동 방법</h3><p>🚗 렌터카 · 주차와 이동시간 확인</p><p>🚌 대중교통 · 환승과 막차 확인</p></div><div><h3>알아두면 좋은 팁</h3><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><h3>비 오는 날</h3><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></section>
+                    <section className="atlas-bottom-info"><div><h3>추천 이동 방법</h3><p>🚗 렌터카 · 주차와 이동시간 확인</p><p>🚌 대중교통 · 환승과 막차 확인</p></div><div><h3>알아두면 좋은 팁</h3><p>{(aiGuidePlan.localTips?.length?aiGuidePlan.localTips:aiGuidePlan.familyTips)?.join(" · ")}</p></div><div><h3>비 오는 날</h3><p>{(aiGuidePlan.checklist?.length?aiGuidePlan.checklist:aiGuidePlan.weatherBackup)?.join(" · ")}</p></div></section>
                   </article>
                 </>;
               })()}
