@@ -1,5 +1,40 @@
 import { readServerCache, stableHash, writeServerCache } from "../../lib/server/cache";
 
+function fallbackRecommendation(body: any, candidates: any[], reason = "fallback") {
+  return {
+    overview: "AI 추천 응답이 지연되어 Google 장소 후보를 먼저 정리했어요. 사진과 상세 정보는 이어서 보강합니다.",
+    localizations: candidates.map((item: any) => ({ id: item.id, koreanName: item.name })),
+    recommendations: candidates.map((item: any, index: number) => ({
+      id: item.id,
+      reason: `${body?.trip?.area || "여행지"}에서 평점과 접근성을 기준으로 먼저 볼 만한 장소입니다.`,
+      famousItems: item.recommendedMenu ? [item.recommendedMenu] : [],
+      recommendedItems: item.recommendedMenu
+        ? [{ name: item.recommendedMenu, price: item.googlePriceRange || item.googlePriceLevel || "가격 확인" }]
+        : [],
+      priceGuide: item.googlePriceRange || item.googlePriceLevel || "현장 가격 확인",
+      evidence: item.rating ? `Google 평점 ${item.rating}${item.reviewCount ? `, 리뷰 ${item.reviewCount}` : ""}` : "Google 장소 후보",
+      familyTip: "가족 구성원의 이동 거리와 운영시간을 확인하고 방문해 주세요.",
+      visitTip: "방문 전 영업시간과 혼잡도를 확인해 주세요.",
+      parkingTip: "주차장은 Google 지도에서 주변 주차장을 함께 확인해 주세요.",
+      bestTime: "오전 또는 혼잡 시간 전",
+      priority: index + 1,
+    })),
+    fallbackReason: reason,
+  };
+}
+
+function parseModelJson(content: string) {
+  const cleaned = content.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+    throw new Error("No JSON object found");
+  }
+}
+
 export async function POST(request: Request) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) return Response.json({ error: "AI configuration is required." }, { status: 503 });
@@ -11,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   const cacheKey = await stableHash({
-    version: 4,
+    version: 5,
     trip: body.trip,
     candidates: candidates.map((item: any) => [
       item.id,
@@ -42,31 +77,34 @@ export async function POST(request: Request) {
         thinking: { type: "disabled" },
         response_format: { type: "json_object" },
         temperature: 0.2,
-        max_tokens: 900,
+        max_tokens: 1000,
         messages: [
           {
             role: "system",
             content:
-              "You are a Korean family travel editor. Use only the provided candidate places and keep each recommendation id exactly as provided. Return compact JSON only: {overview, localizations:[{id,koreanName}], recommendations:[{id,reason,famousItems,recommendedItems:[{name,price}],priceGuide,evidence,familyTip,visitTip,parkingTip,bestTime,priority}]}. Do not create an itinerary or guidebook. Keep copy concrete, family-friendly, and avoid inventing unsupported prices.",
+              "You are a Korean family travel editor. Use only the provided candidate places and keep each recommendation id exactly as provided. Return valid compact JSON only: {overview,localizations:[{id,koreanName}],recommendations:[{id,reason,famousItems,recommendedItems:[{name,price}],priceGuide,evidence,familyTip,visitTip,parkingTip,bestTime,priority}]}. Do not create an itinerary or guidebook. Keep copy concrete, family-friendly, and avoid inventing unsupported prices.",
           },
           { role: "user", content: JSON.stringify({ currentTimeKST: koreaTime, trip: body.trip, candidates }) },
         ],
       }),
     });
   } catch {
-    return Response.json({ error: "AI 추천 응답 시간이 초과됐어요. 다시 시도해 주세요." }, { status: 504 });
+    return Response.json({ result: fallbackRecommendation(body, candidates, "timeout"), cacheHit: false, fallback: true });
   }
 
   if (!response.ok) {
-    return Response.json({ error: "AI 추천을 생성하지 못했어요. 잠시 후 다시 시도해 주세요." }, { status: response.status });
+    return Response.json({ result: fallbackRecommendation(body, candidates, `upstream-${response.status}`), cacheHit: false, fallback: true });
   }
 
   const data = await response.json();
   try {
-    const result = JSON.parse(data.choices?.[0]?.message?.content || "{}");
+    const result = parseModelJson(data.choices?.[0]?.message?.content || "{}");
+    if (!Array.isArray(result?.recommendations) || !result.recommendations.length) {
+      throw new Error("Empty recommendations");
+    }
     await writeServerCache("ai-recommend", cacheKey, result, 60 * 60 * 24 * 7);
     return Response.json({ result, cacheHit: false });
   } catch {
-    return Response.json({ error: "AI recommendation JSON could not be parsed." }, { status: 502 });
+    return Response.json({ result: fallbackRecommendation(body, candidates, "parse-error"), cacheHit: false, fallback: true });
   }
 }
