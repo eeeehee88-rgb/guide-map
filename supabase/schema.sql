@@ -92,3 +92,7 @@ with check (true);
 grant select, insert, update, delete on public.trip_profiles to authenticated;
 grant select, insert, update, delete on public.saved_places to authenticated;
 grant all on public.server_cache to service_role;
+
+revoke all on public.trip_profiles from anon;
+revoke all on public.saved_places from anon;
+revoke all on public.server_cache from anon, authenticated;
