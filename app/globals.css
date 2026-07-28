@@ -218,7 +218,7 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .traveler-heading{gap:10px}.traveler-heading>div{min-width:0}.traveler-heading>button{flex:0 0 auto;padding:0 12px;border:1px solid rgba(0,81,68,.14)}
 .traveler-row{grid-template-columns:36px minmax(0,1fr) 86px 42px;width:100%}
 .traveler-row>input{width:100%;padding:0 12px}
-.traveler-row>label{min-width:0;padding:0 8px}.traveler-row>label input{width:0;padding:0;border:0!important;box-shadow:none!important}
+.traveler-row>label{min-width:0;padding:0 8px}.traveler-row>label input{flex:1;width:100%;padding:0;border:0!important;box-shadow:none!important;text-align:right}
 .traveler-row>button{min-height:42px;border:1px solid #efd0ca}
 .route-heading-actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}
 .clear-route{height:36px;min-height:36px;border-color:#e4b5ad;font-size:10px}

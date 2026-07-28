@@ -143,6 +143,17 @@ function containsJapanese(value: string | undefined) {
   return Boolean(value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value));
 }
 
+function originalPlaceName(point: Point) {
+  if (point.originalName && point.originalName !== point.name) return point.originalName;
+  if (point.query && !point.query.startsWith("http") && containsJapanese(point.query)) return point.query;
+  return "";
+}
+
+function placeDisplayName(point: Point) {
+  const original = originalPlaceName(point);
+  return original ? `${point.name} / ${original}` : point.name;
+}
+
 function localizePoint(point: Point, fallback = "저장한 현지 장소"): Point {
   if (point.category !== "검색") return point;
   const name = koreanPlaceText(point.name, point.name || fallback);
@@ -386,6 +397,7 @@ export default function Home() {
   const mapRef = useRef<any>(null);
   const markerLayerRef = useRef<any[]>([]);
   const routeLayerRef = useRef<any>(null);
+  const initialGuideLoadedRef = useRef(false);
   const [googleReady, setGoogleReady] = useState(false);
   const [mapsKey, setMapsKey] = useState("");
   const [category, setCategory] = useState<Category>("전체");
@@ -853,7 +865,7 @@ export default function Home() {
       const marker = new google.maps.Marker({
         map:mapRef.current,
         position:{ lat:point.lat, lng:point.lng },
-        title:point.originalName ? `${point.name} / ${point.originalName}` : point.name,
+        title:placeDisplayName(point),
         label:{
           text:isCurrentLocation ? "현재" : point.category === "숙소" ? "숙소" : point.id === "station" ? "역" : point.name.slice(0,2),
           color:"#ffffff",
@@ -909,6 +921,19 @@ export default function Home() {
     persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
   };
 
+  const mergePointEverywhere = (enriched:Point) => {
+    const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?{...item,...enriched}:item);
+    setSelected((current)=>current.id===enriched.id?{...current,...enriched}:current);
+    setPlaceResults(replace);
+    setGuideRecommendations(replace);
+    setSavedPlaces((items)=>{
+      if (!items.some((item)=>item.id===enriched.id)) return items;
+      const next=replace(items);
+      localStorage.setItem("inuyama-saved-places",JSON.stringify(next));
+      return next;
+    });
+  };
+
   const localizePointNames = async (points:Point[]) => {
     const cached = new Map<string,string>();
     points.forEach((point)=>{
@@ -941,6 +966,35 @@ export default function Home() {
       const originalName=point.originalName || point.name;
       return {...point,name,originalName:originalName!==name?originalName:point.originalName};
     });
+  };
+
+  const hydrateRecommendationPreviews = async (points:Point[], limit=18) => {
+    if (!googleReady || !points.length) return;
+    const targets=points.filter((point)=>point.googlePlaceId && !point.detailLoaded).slice(0,limit);
+    if (!targets.length) return;
+    try {
+      const google=(window as any).google;
+      const {Place}=await google.maps.importLibrary("places");
+      const hydrated=(await Promise.allSettled(targets.map(async(point)=>{
+        const place=new Place({id:point.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
+        await place.fetchFields({fields:[
+          "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
+          "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
+          "currentOpeningHours","regularOpeningHours","editorialSummary","generativeSummary","reviewSummary",
+          "googleMapsLinks","reviews"
+        ]});
+        const details=googlePlaceDetails(place,point.name);
+        return {
+          ...point,...details,
+          sub:details.address,
+          detailLoaded:true,
+          query:place.googleMapsURI || point.query,
+          photoUrl:details.photoUrls?.[0] || point.photoUrl
+        } as Point;
+      }))).flatMap((result)=>result.status==="fulfilled"?[result.value]:[]);
+      const localized=await localizePointNames(hydrated);
+      localized.forEach(mergePointEverywhere);
+    } catch {}
   };
 
   const searchGooglePlaces = async (queryOverride?:string) => {
@@ -1091,6 +1145,7 @@ export default function Home() {
           aiGuideAreaRef.current=cached.area || travelArea.trim();
           setSelected(cached.recommendations[0]);
           setDestinationId(cached.recommendations[0].id);
+          void hydrateRecommendationPreviews(cached.recommendations);
           return cached.recommendations as Point[];
         }
       } catch {}
@@ -1231,6 +1286,7 @@ export default function Home() {
       setDestinationId(fallbackPoints[0].id);
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
       setGuideLoading(false);
+      void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1294,6 +1350,7 @@ export default function Home() {
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations(next);
+      void hydrateRecommendationPreviews(next);
       const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
       setAiGuidePlan(preparedGuide);
       setAiGuideArea(travelArea.trim());
@@ -1323,6 +1380,12 @@ export default function Home() {
       setGuideLoading(false);
     }
   };
+
+  useEffect(()=>{
+    if (!googleReady || initialGuideLoadedRef.current || guideLoading || guideRecommendations.length || !travelArea.trim()) return;
+    initialGuideLoadedRef.current=true;
+    void buildAreaGuide();
+  },[googleReady, travelArea, guideLoading, guideRecommendations.length]);
 
   const downloadGuideImage = async () => {
     if (!guideRef.current) return;
@@ -1746,7 +1809,7 @@ export default function Home() {
         </button>
         {sheet === "places" && (
           <>
-            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{selected.name}</h2>{selected.originalName && <span className="original-name">{selected.originalName}</span>}</div></div>
+            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{placeDisplayName(selected)}</h2></div></div>
             <div className="category-scroll">
               {categories.map((item) => {
                 const count=item==="전체" ? recommendationPool.length : recommendationPool.filter((point)=>guideGroup(point)===item).length;
@@ -1764,8 +1827,7 @@ export default function Home() {
                   {spot.photoUrl ? <img src={spot.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span>}
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
-                    <b>{spot.name}</b>
-                    {spot.originalName&&<em>{spot.originalName}</em>}
+                    <b>{placeDisplayName(spot)}</b>
                     <p className="recommendation-summary">{spot.description}</p>
                     <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
                     <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
@@ -1776,7 +1838,7 @@ export default function Home() {
             </div>
             {placeDetailOpen && createPortal(<div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
               <section className="place-detail-popup" role="dialog" aria-modal="true" aria-label={`${selected.name} 상세 정보`} onPointerDown={(event)=>event.stopPropagation()}>
-                <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{selected.name}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
+                <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{placeDisplayName(selected)}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
                 <div className="place-detail-popup-scroll">
             {selected.photoUrls&&selected.photoUrls.length>0 ? <section className="place-photo-section">
               <div className="place-photo-gallery">{selected.photoUrls.map((url,index)=><img key={url} src={url} alt={`${selected.name} Google 등록 사진 ${index+1}`}/>)}</div>
@@ -1786,8 +1848,7 @@ export default function Home() {
               <span className="place-dot" style={{background:pointColor(selected)}}>{selected.category === "숙소" ? "숙" : selected.name.slice(0,1)}</span>
               <div className="place-main">
                 <div className="place-title">
-                  <b>{selected.name}</b>
-                  {selected.originalName && <em>{selected.originalName}</em>}
+                  <b>{placeDisplayName(selected)}</b>
                   <small>{selected.sub}</small>
                   {selected.originalAddress && <small className="original-address">{selected.originalAddress}</small>}
                 </div>
@@ -1890,7 +1951,7 @@ export default function Home() {
               {regionalPlaceResults.map((point) => (
                 <article key={point.id} className="google-result">
                   <button className="result-main" onClick={() => {setSelected(point);setSheet("places");setPlaceDetailOpen(true);mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <MapPin size={17} style={{color:pointColor(point)}}/><span><b>{point.name}</b>{point.originalName && <em>{point.originalName}</em>}<small>{point.sub}</small></span>
+                    <MapPin size={17} style={{color:pointColor(point)}}/><span><b>{placeDisplayName(point)}</b><small>{point.sub}</small></span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
                   <button className="result-route" onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
@@ -1909,7 +1970,7 @@ export default function Home() {
               {savedPlaces.map((point) => (
                 <article key={point.id} className="saved-row">
                   <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <span style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span><div><b>{point.name}</b><small>{point.sub}</small></div>
+                    <span style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span><div><b>{placeDisplayName(point)}</b><small>{point.sub}</small></div>
                   </button>
                   <button onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
                   <button className="delete-saved" onClick={() => toggleSavedPlace(point)} aria-label="삭제"><Trash2 size={16}/></button>
@@ -1985,14 +2046,14 @@ export default function Home() {
                 <button onClick={searchRoutePlaces}>{routeSearching ? "검색 중" : "검색"}</button>
               </div>
               {routeSearchResults.length > 0 && <div className="route-search-results">
-                {routeSearchResults.map((point)=><button key={point.id} onClick={()=>chooseRouteSearchPlace(point)}><MapPin size={15}/><span><b>{point.name}</b>{point.originalName&&<em>{point.originalName}</em>}<small>{point.sub}</small></span></button>)}
+                {routeSearchResults.map((point)=><button key={point.id} onClick={()=>chooseRouteSearchPlace(point)}><MapPin size={15}/><span><b>{placeDisplayName(point)}</b><small>{point.sub}</small></span></button>)}
               </div>}
               <small className="route-search-help">현재 여행 지역과 관계없이 {travelCountry==="KR"?"한국":"일본"} 전역의 장소를 검색할 수 있어요.</small>
             </div>
             <div className="route-selects">
-              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{routeSearchPoints.map((p)=><option key={`route-from-${p.id}`} value={p.id}>직접 검색 · {p.name}</option>)}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="origin-dot"/><div><small>출발지</small><select value={originId} onChange={(e)=>setOriginId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{routeSearchPoints.map((p)=><option key={`route-from-${p.id}`} value={p.id}>직접 검색 · {placeDisplayName(p)}</option>)}{recommendationPool.map((p)=><option key={`region-from-${p.id}`} value={p.id}>{placeDisplayName(p)}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-from-${p.id}`} value={p.id}>저장 · {placeDisplayName(p)}</option>)}</select></div></label>
               <div className="route-line"/>
-              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{routeSearchPoints.map((p)=><option key={`route-to-${p.id}`} value={p.id}>직접 검색 · {p.name}</option>)}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{p.name}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {p.name}</option>)}</select></div></label>
+              <label><span className="dest-dot"/><div><small>도착지</small><select value={destinationId} onChange={(e)=>setDestinationId(e.target.value)}>{currentLocation && <option value="current-location">내 현재 위치</option>}{hotel && <option value="hotel">내 숙소 · {hotel.name}</option>}{areaPoint && <option value="area-center">{travelArea} 중심</option>}{isInuyamaArea && <option value="station">이누야마역</option>}{routeSearchPoints.map((p)=><option key={`route-to-${p.id}`} value={p.id}>직접 검색 · {placeDisplayName(p)}</option>)}{recommendationPool.map((p)=><option key={`region-to-${p.id}`} value={p.id}>{placeDisplayName(p)}</option>)}{regionalSavedPlaces.map((p)=><option key={`saved-to-${p.id}`} value={p.id}>저장 · {placeDisplayName(p)}</option>)}</select></div></label>
             </div>
             <button className="calculate-button" onClick={getRoute} disabled={routeLoading}>{routeLoading ? "경로 계산 중…" : <><Navigation size={18}/> 이동시간 계산하기</>}</button>
             <a className="navigation-start" href={googleNavigationUrl()} target="_blank" rel="noreferrer"><Navigation size={18}/>Google 지도에서 {mode === "transit" ? "대중교통 경로" : "내비게이션"} 열기</a>
@@ -2073,7 +2134,7 @@ export default function Home() {
                   || point.recommendedMenu
                   || `${guideGroup(point)} 대표 항목은 방문 전 확인`;
                 const compactCard=(point:Point,index:number,kind:"food"|"spot"|"shop"="spot")=><article className={`atlas-card atlas-${kind}-card`} key={point.id}>
-                  <header><span style={{background:pointColor(point)}}>{index+1}</span><div><b>{point.name}</b>{point.originalName&&<small>{point.originalName}</small>}</div></header>
+                  <header><span style={{background:pointColor(point)}}>{index+1}</span><div><b>{placeDisplayName(point)}</b></div></header>
                   {point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                   <p>{point.aiReason||point.description}</p>
                   <strong>{kind==="food"?"추천 메뉴":kind==="shop"?"추천 상품":"여기서 할 일"} · {itemLine(point)}</strong>
@@ -2090,14 +2151,14 @@ export default function Home() {
                         <section><h3>여행 정보</h3><p>화폐 · {travelCountry==="KR"?"대한민국 원(₩)":"일본 엔(¥)"}</p><p>일정 · {tripDays?`${tripDays.nights}박 ${tripDays.days}일`:"당일"}</p><p>구성 · {travelers.map((item)=>item.relation).join(" · ")}</p></section>
                       </aside>
                       <section className="atlas-main-map">{staticMapUrl?<img src={staticMapUrl} alt={`${travelArea} 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div className="atlas-map-caption"><b>{travelArea} 추천 지도</b><span>{mapPlaces.length}개 장소를 번호로 표시했습니다.</span></div></section>
-                      <aside className="atlas-map-spots">{attractions.slice(0,7).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p><small>{point.aiBestTime||point.hours||"방문시간 확인"}</small></div></article>)}</aside>
+                      <aside className="atlas-map-spots">{attractions.slice(0,7).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p><small>{point.aiBestTime||point.hours||"방문시간 확인"}</small></div></article>)}</aside>
                     </div>
                     <footer className="atlas-tip-row"><b>알아두면 좋은 TIP</b>{aiGuidePlan.familyTips?.slice(0,3).map((tip,index)=><span key={index}>✓ {tip}</span>)}</footer>
                   </article>
 
                   <article className="guide-page atlas-page atlas-course-page">
                     <header className="atlas-title"><span>2/3</span><div><h2>{travelArea} 추천 동선 & 맛집 & 쇼핑 가이드</h2><p>꼭 가봐야 할 장소와 꼭 먹고 사야 할 항목</p></div><time>{dateText}</time></header>
-                    <section className="atlas-route"><h3>추천 하루 코스</h3><div>{routePlaces.map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><b>{point.name}</b><small>{index===routePlaces.length-1?"도착":"약 10~20분 이동"}</small></article>)}</div></section>
+                    <section className="atlas-route"><h3>추천 하루 코스</h3><div>{routePlaces.map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><b>{placeDisplayName(point)}</b><small>{index===routePlaces.length-1?"도착":"약 10~20분 이동"}</small></article>)}</div></section>
                     <div className="atlas-course-layout">
                       <main>
                         <h3 className="atlas-section-title food">꼭 가봐야 할 맛집 & 카페</h3>
@@ -2105,7 +2166,7 @@ export default function Home() {
                         <h3 className="atlas-section-title shop">쇼핑·기념품·주류 리스트</h3>
                         <div className="atlas-buy-grid">{[...shoppingPlaces.slice(0,5),...drinkPlaces.slice(0,3)].map((point,index)=>compactCard(point,index,"shop"))}</div>
                       </main>
-                      <aside><h3>주요 스팟 한눈에 보기</h3>{attractions.slice(0,10).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p></div></article>)}</aside>
+                      <aside><h3>주요 스팟 한눈에 보기</h3>{attractions.slice(0,10).map((point,index)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p></div></article>)}</aside>
                     </div>
                     <footer className="atlas-tip-row"><b>여행 TIP</b><span>맛집은 혼잡 시간 전 방문</span><span>쇼핑은 면세·결제 가능 여부 확인</span><span>주류는 수하물 규정을 확인</span></footer>
                   </article>
@@ -2113,10 +2174,10 @@ export default function Home() {
                   <article className="guide-page atlas-page atlas-nearby-page">
                     <header className="atlas-title"><span>3/3</span><div><h2>{travelArea} 근교 지도 & 식당·카페 가이드</h2><p>렌터카와 대중교통으로 넓혀 보는 주변 추천</p></div><time>{dateText}</time></header>
                     <div className="atlas-nearby-layout">
-                      <section className="atlas-nearby-map">{nearbyMapUrl?<img src={nearbyMapUrl} alt={`${travelArea} 근교 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div>{nearbyPlaces.map((point,index)=><p key={point.id}><span style={{background:pointColor(point)}}>{index+1}</span><b>{point.name}</b><small>{guideGroup(point)}</small></p>)}</div></section>
+                      <section className="atlas-nearby-map">{nearbyMapUrl?<img src={nearbyMapUrl} alt={`${travelArea} 근교 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div>{nearbyPlaces.map((point,index)=><p key={point.id}><span style={{background:pointColor(point)}}>{index+1}</span><b>{placeDisplayName(point)}</b><small>{guideGroup(point)}</small></p>)}</div></section>
                       <aside>
                         <h3 className="atlas-section-title food">근교 식당·카페 추천</h3>
-                        {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{point.name}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
+                        {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
                       </aside>
                     </div>
                     <section className="atlas-bottom-info"><div><h3>추천 이동 방법</h3><p>🚗 렌터카 · 주차와 이동시간 확인</p><p>🚌 대중교통 · 환승과 막차 확인</p></div><div><h3>알아두면 좋은 팁</h3><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><h3>비 오는 날</h3><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></section>
