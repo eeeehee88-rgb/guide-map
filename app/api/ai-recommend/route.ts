@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   }
 
   const cacheKey = await stableHash({
-    version: 2,
+    version: 3,
     trip: body.trip,
     candidates: candidates.map((item: any) => [
       item.id,
@@ -31,29 +31,34 @@ export async function POST(request: Request) {
     timeStyle: "short",
   }).format(new Date());
 
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(18_000),
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: "deepseek-v4-flash",
-      thinking: { type: "disabled" },
-      response_format: { type: "json_object" },
-      temperature: 0.2,
-      max_tokens: 1800,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a Korean family travel editor. Use only the provided candidate places. Return JSON only: {overview, localizations:[{id,koreanName}], recommendations:[{id,reason,famousItems,recommendedItems:[{name,price}],priceGuide,evidence,familyTip,visitTip,parkingTip,bestTime,priority}], guide:{title,overview,days:[{day,title,stops:[{id,time,reason}],tips}],familyTips,weatherBackup}}. Keep copy concrete, family-friendly, and avoid inventing unsupported prices.",
-        },
-        { role: "user", content: JSON.stringify({ currentTimeKST: koreaTime, trip: body.trip, candidates }) },
-      ],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      signal: AbortSignal.timeout(45_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "deepseek-v4-flash",
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 1600,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a Korean family travel editor. Use only the provided candidate places and keep each recommendation id exactly as provided. Return JSON only: {overview, localizations:[{id,koreanName}], recommendations:[{id,reason,famousItems,recommendedItems:[{name,price}],priceGuide,evidence,familyTip,visitTip,parkingTip,bestTime,priority}], guide:{title,overview,days:[{day,title,stops:[{id,time,reason}],tips}],familyTips,weatherBackup}}. Keep copy concrete, family-friendly, and avoid inventing unsupported prices.",
+          },
+          { role: "user", content: JSON.stringify({ currentTimeKST: koreaTime, trip: body.trip, candidates }) },
+        ],
+      }),
+    });
+  } catch {
+    return Response.json({ error: "AI 추천 응답 시간이 초과됐어요. 다시 시도해 주세요." }, { status: 504 });
+  }
 
   if (!response.ok) {
-    return Response.json({ error: "AI recommendations could not be generated." }, { status: response.status });
+    return Response.json({ error: "AI 추천을 생성하지 못했어요. 잠시 후 다시 시도해 주세요." }, { status: response.status });
   }
 
   const data = await response.json();

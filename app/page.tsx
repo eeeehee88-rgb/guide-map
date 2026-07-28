@@ -449,6 +449,7 @@ export default function Home() {
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
+  const [recommendationError, setRecommendationError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
@@ -459,7 +460,7 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v11:${JSON.stringify({
+  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v12:${JSON.stringify({
     area:travelArea.trim(),country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -700,7 +701,7 @@ export default function Home() {
     return pointDistanceKm(recommendationCenter,a)-pointDistanceKm(recommendationCenter,b);
   });
   const listedSpots = category === "전체" ? sortedVisibleSpots.slice(0,15) : sortedVisibleSpots;
-  const recommendationPending = !guideRecommendations.length && !routeError;
+  const recommendationPending = !guideRecommendations.length && !recommendationError;
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -1119,6 +1120,7 @@ export default function Home() {
     let fallbackPoints:Point[] = [];
     setGuideLoading(true);
     setGuideRecommendations([]);
+    setRecommendationError("");
     setPlaceResults([]);
     setCategory("전체");
     setRouteError("");
@@ -1356,15 +1358,8 @@ export default function Home() {
         const pa:any=recommendationMap.get(a.id), pb:any=recommendationMap.get(b.id);
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
-      const aiIds = new Set(aiSelected.map((point)=>point.id));
-      const localizedFallback = fallbackPoints.filter((point)=>!aiIds.has(point.id)).map((point)=>{
-        const localizedName=localizationMap.get(point.id);
-        return localizedName && !containsJapanese(localizedName)
-          ? {...point,name:localizedName,originalName:point.originalName || point.name}
-          : point;
-      });
-      const next = [...aiSelected,...localizedFallback].slice(0,60);
-      if (!next.length) throw new Error();
+      const next = aiSelected.slice(0,60);
+      if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations((current)=>next.map((point)=>{
         const existing=current.find((item)=>item.id===point.id) || fallbackPoints.find((item)=>item.id===point.id);
@@ -1394,6 +1389,7 @@ export default function Home() {
       return next;
     } catch (error:any) {
       setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+      setRecommendationError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       return [] as Point[];
     } finally {
       setGuideLoading(false);
@@ -1843,7 +1839,8 @@ export default function Home() {
               <span>{listedSpots.length}곳</span>
             </div>
             {recommendationPending && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천 리스트 검색 중입니다</b><small>AI 추천 결과가 나온 뒤 사진과 지도 표시를 적용합니다.</small></div>}
-            {!recommendationPending && <div className="recommendation-list">
+            {recommendationError && !guideRecommendations.length && <div className="recommendation-loading error"><Sparkles size={20}/><b>AI 추천을 아직 받지 못했어요</b><small>{recommendationError}</small><button onClick={()=>void buildAreaGuide()}>다시 검색</button></div>}
+            {!recommendationPending && !recommendationError && <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
                 return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
