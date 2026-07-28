@@ -150,6 +150,25 @@ function containsJapanese(value: string | undefined) {
   return Boolean(value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value));
 }
 
+function containsHangul(value: string | undefined) {
+  return Boolean(value && /[\uac00-\ud7a3]/.test(value));
+}
+
+function needsReadableKoreanName(point: Point) {
+  const source = point.originalName || point.name;
+  return Boolean(
+    source && (
+      containsJapanese(source)
+      || (!containsHangul(point.name) && /[A-Za-z]/.test(source))
+      || Boolean(point.originalName && point.originalName !== point.name && !containsHangul(point.name))
+    )
+  );
+}
+
+function isGenericLocalizedName(value: string) {
+  return /(?:\uc77c\ubcf8|\ud604\uc9c0).*(?:\uc74c\uc2dd\uc810|\uc2dd\ub2f9|\uce74\ud398|\uad00\uad11|\uc7a5\uc18c)/.test(value);
+}
+
 function originalPlaceName(point: Point) {
   if (point.originalName && point.originalName !== point.name) return point.originalName;
   if (point.query && !point.query.startsWith("http") && containsJapanese(point.query)) return point.query;
@@ -850,19 +869,16 @@ export default function Home() {
             photoUrls:details.photoUrls,detailedReviews:details.detailedReviews,photosPage:details.photosPage,reviewsPage:details.reviewsPage,
             photoUrl:details.photoUrls?.[0] || place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
           };
-          setPlaceResults((current) => current.some((item) => item.id === point.id)
-            ? current.map((item)=>item.id===point.id?mergePointData(item,point):item)
-            : [point, ...current]
+          const [localizedPoint] = await localizePointNames([point]);
+          const nextPoint = localizedPoint || point;
+          setPlaceResults((current) => current.some((item) => item.id === nextPoint.id)
+            ? current.map((item)=>item.id===nextPoint.id?mergePointData(item,nextPoint):item)
+            : [nextPoint, ...current]
           );
-          setSelected(point);
+          setSelected(nextPoint);
           setSheet("places");
           setSheetCollapsed(false);
           setPlaceDetailOpen(true);
-          void localizePointNames([point]).then(([localized])=>{
-            if (!localized) return;
-            setPlaceResults((current)=>current.map((item)=>item.id===localized.id?localized:item));
-            setSelected((current)=>current.id===localized.id?localized:current);
-          });
         } catch {
           setRouteError("선택한 장소 정보를 불러오지 못했어요.");
         }
@@ -933,26 +949,35 @@ export default function Home() {
     persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
   };
 
-  const mergePointData = (current:Point, incoming:Point) => ({
-    ...current,
-    ...incoming,
-    listSummary:incoming.listSummary || incoming.description || current.listSummary || current.description,
-    photoUrl:incoming.photoUrl || current.photoUrl,
-    photoUrls:incoming.photoUrls?.length ? incoming.photoUrls : current.photoUrls,
-    detailLoaded:current.detailLoaded || incoming.detailLoaded,
-    detailAiLoaded:current.detailAiLoaded || incoming.detailAiLoaded,
-    phone:incoming.phone || current.phone,
-    website:incoming.website || current.website,
-    weeklyHours:incoming.weeklyHours?.length ? incoming.weeklyHours : current.weeklyHours,
-    detailedReviews:incoming.detailedReviews?.length ? incoming.detailedReviews : current.detailedReviews,
-    serviceOptions:incoming.serviceOptions?.length ? incoming.serviceOptions : current.serviceOptions,
-    parkingOptions:incoming.parkingOptions?.length ? incoming.parkingOptions : current.parkingOptions,
-    accessibility:incoming.accessibility?.length ? incoming.accessibility : current.accessibility,
-    paymentOptions:incoming.paymentOptions?.length ? incoming.paymentOptions : current.paymentOptions,
-    reviewSummary:incoming.reviewSummary || current.reviewSummary,
-    photosPage:incoming.photosPage || current.photosPage,
-    reviewsPage:incoming.reviewsPage || current.reviewsPage
-  });
+  const mergePointData = (current:Point, incoming:Point) => {
+    const keepCurrentReadableName = containsHangul(current.name) && !containsHangul(incoming.name);
+    const name = keepCurrentReadableName ? current.name : incoming.name;
+    const originalName = keepCurrentReadableName
+      ? incoming.originalName || incoming.name || current.originalName
+      : incoming.originalName || current.originalName;
+    return {
+      ...current,
+      ...incoming,
+      name,
+      originalName:originalName && originalName !== name ? originalName : undefined,
+      listSummary:incoming.listSummary || incoming.description || current.listSummary || current.description,
+      photoUrl:incoming.photoUrl || current.photoUrl,
+      photoUrls:incoming.photoUrls?.length ? incoming.photoUrls : current.photoUrls,
+      detailLoaded:current.detailLoaded || incoming.detailLoaded,
+      detailAiLoaded:current.detailAiLoaded || incoming.detailAiLoaded,
+      phone:incoming.phone || current.phone,
+      website:incoming.website || current.website,
+      weeklyHours:incoming.weeklyHours?.length ? incoming.weeklyHours : current.weeklyHours,
+      detailedReviews:incoming.detailedReviews?.length ? incoming.detailedReviews : current.detailedReviews,
+      serviceOptions:incoming.serviceOptions?.length ? incoming.serviceOptions : current.serviceOptions,
+      parkingOptions:incoming.parkingOptions?.length ? incoming.parkingOptions : current.parkingOptions,
+      accessibility:incoming.accessibility?.length ? incoming.accessibility : current.accessibility,
+      paymentOptions:incoming.paymentOptions?.length ? incoming.paymentOptions : current.paymentOptions,
+      reviewSummary:incoming.reviewSummary || current.reviewSummary,
+      photosPage:incoming.photosPage || current.photosPage,
+      reviewsPage:incoming.reviewsPage || current.reviewsPage
+    };
+  };
 
   const placeSummary = (point:Point) => point.listSummary || point.description;
 
@@ -973,31 +998,36 @@ export default function Home() {
     const cached = new Map<string,string>();
     points.forEach((point)=>{
       const value = localStorage.getItem(`place-name-ko-v2:${point.id}`);
-      if (value && !containsJapanese(value) && /[가-힣]/.test(value)) cached.set(point.id,value);
+      if (value && !containsJapanese(value) && containsHangul(value) && !isGenericLocalizedName(value)) cached.set(point.id,value);
     });
-    const missing = points.filter((point)=>!cached.has(point.id) && (
-      containsJapanese(point.originalName || point.name)
-      || Boolean(point.googlePlaceId && !/[가-힣]/.test(point.name))
-      || Boolean(point.originalName && point.originalName !== point.name)
-    ));
+    const missing = points.filter((point)=>!cached.has(point.id) && needsReadableKoreanName(point));
     if (missing.length) {
-      try {
-        const response = await fetch("/api/ai-localize",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({places:missing.map((point)=>({id:point.id,name:point.originalName || point.name}))})
-        });
-        const data = await response.json();
-        if (response.ok && Array.isArray(data.places)) {
-          data.places.forEach((item:any)=>{
-            const name=String(item.koreanName||"").trim();
-            if (name && !containsJapanese(name) && !/일본\s*(음식점|식당|카페|관광|장소)|현지\s*(음식점|식당|카페|장소)/.test(name)) {
-              cached.set(item.id,name);
-              localStorage.setItem(`place-name-ko-v2:${item.id}`,name);
-            }
+      for (let index=0; index<missing.length; index+=40) {
+        const chunk=missing.slice(index,index+40);
+        try {
+          const response = await fetch("/api/ai-localize",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({places:chunk.map((point)=>({
+              id:point.id,
+              name:point.originalName || point.name,
+              originalName:point.originalName,
+              category:guideGroup(point),
+              type:point.placeType
+            }))})
           });
-        }
-      } catch {}
+          const data = await response.json();
+          if (response.ok && Array.isArray(data.places)) {
+            data.places.forEach((item:any)=>{
+              const name=String(item.koreanName||"").trim();
+              if (name && !containsJapanese(name) && containsHangul(name) && !isGenericLocalizedName(name)) {
+                cached.set(item.id,name);
+                localStorage.setItem(`place-name-ko-v2:${item.id}`,name);
+              }
+            });
+          }
+        } catch {}
+      }
     }
     return points.map((point)=>{
       const name=cached.get(point.id);
@@ -1006,7 +1036,6 @@ export default function Home() {
       return {...point,name,originalName:originalName!==name?originalName:point.originalName};
     });
   };
-
   const hydrateRecommendationPreviews = async (points:Point[], limit=60) => {
     if (!googleReady || !points.length) return;
     const targets=points.filter((point)=>point.googlePlaceId && !point.detailLoaded).slice(0,limit);
@@ -1183,13 +1212,14 @@ export default function Home() {
       try {
         const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry)) || "null");
         if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
+          const cachedRecommendations = await localizePointNames(cached.recommendations);
           setAiOverview(cached.overview || "");
-          setGuideRecommendations(cached.recommendations);
+          setGuideRecommendations(cachedRecommendations);
           setAiGuideArea(cached.area || travelArea.trim());
           aiGuideAreaRef.current=cached.area || travelArea.trim();
-          setDestinationId(cached.recommendations[0].id);
-          void hydrateRecommendationPreviews(cached.recommendations);
-          return cached.recommendations as Point[];
+          setDestinationId(cachedRecommendations[0].id);
+          void hydrateRecommendationPreviews(cachedRecommendations);
+          return cachedRecommendations as Point[];
         }
       } catch {}
       const { Place } = await google.maps.importLibrary("places");
@@ -1325,7 +1355,7 @@ export default function Home() {
         aiParkingTip:"전용·인근 주차장은 Google 지도에서 확인해 주세요."
       }));
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
-      fallbackPoints = fallbackPoints.slice(0,60);
+      fallbackPoints = await localizePointNames(fallbackPoints.slice(0,60));
       setGuideRecommendations(fallbackPoints);
       setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
       void hydrateRecommendationPreviews(fallbackPoints);
@@ -1389,10 +1419,11 @@ export default function Home() {
       });
       const next = aiSelected.slice(0,60);
       const aiPointMap = new Map(next.map((point)=>[point.id,point] as const));
-      const enhancedRecommendations = fallbackPoints.map((point)=>{
+      let enhancedRecommendations = fallbackPoints.map((point)=>{
         const updated=aiPointMap.get(point.id);
         return updated ? mergePointData(point,updated) : point;
       });
+      enhancedRecommendations = await localizePointNames(enhancedRecommendations);
       if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
       setAiOverview(aiData.result.overview || "");
       setGuideRecommendations((current)=>enhancedRecommendations.map((point)=>{
@@ -1418,6 +1449,7 @@ export default function Home() {
       return enhancedRecommendations;
     } catch (error:any) {
       if (fallbackPoints.length) {
+        fallbackPoints = await localizePointNames(fallbackPoints);
         setAiOverview("AI 추천 응답이 늦어 Google 장소 후보를 먼저 표시했어요. 사진과 상세 정보는 이어서 보강합니다.");
         setGuideRecommendations(fallbackPoints);
         setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
@@ -1522,8 +1554,9 @@ export default function Home() {
           placeType:details.placeType, originalName:details.originalName, originalAddress:details.originalAddress
         };
       });
-      setRouteSearchResults(next);
-      if (!next.length) setRouteError(`${travelCountry==="KR"?"한국":"일본"} 내에서 검색 결과를 찾지 못했어요. 지역명과 장소명을 함께 입력해 보세요.`);
+      const localizedNext = await localizePointNames(next);
+      setRouteSearchResults(localizedNext);
+      if (!localizedNext.length) setRouteError(`${travelCountry==="KR"?"한국":"일본"} 내에서 검색 결과를 찾지 못했어요. 지역명과 장소명을 함께 입력해 보세요.`);
     } catch {
       setRouteError("길찾기 장소 검색에 실패했어요. 장소명이나 주소를 다시 확인해 주세요.");
     } finally {
