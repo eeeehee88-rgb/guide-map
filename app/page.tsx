@@ -815,16 +815,6 @@ export default function Home() {
           const place = new Place({ id:event.placeId,requestedLanguage:"ko",requestedRegion:"JP" });
           await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"] });
           if (!place.location) return;
-          const clickedPoint = { lat:place.location.lat(), lng:place.location.lng() };
-          const activeArea=travelAreaRef.current;
-          const currentCenter = areaPointRef.current || (/이누야마|犬山/i.test(activeArea) ? station : null);
-          const activeBounds=areaBoundsRef.current;
-          const isInsideBounds = activeBounds?.contains ? activeBounds.contains(clickedPoint) : true;
-          const isInsideRadius = currentCenter ? pointDistanceKm(currentCenter, clickedPoint) <= 20 : true;
-          if (!isInsideBounds || !isInsideRadius) {
-            setRouteError(`${activeArea} 지역 안의 장소만 선택할 수 있어요.`);
-            return;
-          }
           const details = googlePlaceDetails(place, "지도에서 선택한 장소");
           const point:Point = {
             id:`google-${place.id}`,
@@ -860,7 +850,7 @@ export default function Home() {
     }
     markerLayerRef.current.forEach((marker) => marker.setMap(null));
     markerLayerRef.current = [];
-    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...combinedPlacePool.filter(isPointInCurrentArea), ...regionalPlaceResults, ...regionalSavedPlaces, ...routeSearchPoints]
+    const markerPoints = [...(isInuyamaArea ? [station] : areaPoint ? [areaPoint] : []), ...(currentLocation ? [currentLocation] : []), ...(hotelPoint ? [hotelPoint] : []), ...combinedPlacePool, ...savedPlaces, ...placeResults, ...routeSearchPoints]
       .filter((point, index, items) => items.findIndex((item) => item.id === point.id) === index);
     markerPoints.forEach((point) => {
       const isCurrentLocation = point.id === "current-location";
