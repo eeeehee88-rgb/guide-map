@@ -467,7 +467,7 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v15:${JSON.stringify({
+  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v16:${JSON.stringify({
     area:travelArea.trim(),country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -954,6 +954,8 @@ export default function Home() {
     reviewsPage:incoming.reviewsPage || current.reviewsPage
   });
 
+  const placeSummary = (point:Point) => point.listSummary || point.description;
+
   const mergePointEverywhere = (enriched:Point) => {
     const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?mergePointData(item,enriched):item);
     setSelected((current)=>current.id===enriched.id?mergePointData(current,enriched):current);
@@ -970,8 +972,8 @@ export default function Home() {
   const localizePointNames = async (points:Point[]) => {
     const cached = new Map<string,string>();
     points.forEach((point)=>{
-      const value = localStorage.getItem(`place-name-ko:${point.id}`);
-      if (value) cached.set(point.id,value);
+      const value = localStorage.getItem(`place-name-ko-v2:${point.id}`);
+      if (value && !containsJapanese(value) && /[가-힣]/.test(value)) cached.set(point.id,value);
     });
     const missing = points.filter((point)=>!cached.has(point.id) && (
       containsJapanese(point.originalName || point.name)
@@ -991,7 +993,7 @@ export default function Home() {
             const name=String(item.koreanName||"").trim();
             if (name && !containsJapanese(name) && !/일본\s*(음식점|식당|카페|관광|장소)|현지\s*(음식점|식당|카페|장소)/.test(name)) {
               cached.set(item.id,name);
-              localStorage.setItem(`place-name-ko:${item.id}`,name);
+              localStorage.setItem(`place-name-ko-v2:${item.id}`,name);
             }
           });
         }
@@ -1883,7 +1885,7 @@ export default function Home() {
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
                     <b>{placeDisplayName(spot)}</b>
-                    <p className="recommendation-summary">{spot.description}</p>
+                    <p className="recommendation-summary">{placeSummary(spot)}</p>
                     <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
                     <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
                   </div>
@@ -1916,7 +1918,7 @@ export default function Home() {
                   {typeof selected.openNow === "boolean" && <span className={selected.openNow?"open-now":"closed-now"}>{selected.openNow?"현재 영업 중":"현재 영업 종료"}</span>}
                 </div>}
                 {placeDetailLoading&&<div className="place-detail-loading"><Sparkles size={14}/>Google 상세 정보를 불러오는 중…</div>}
-                <p>{selected.description}</p>
+                <p>{placeSummary(selected)}</p>
                 {(selected.googlePriceRange||selected.googlePriceLevel)&&<p className="place-price">Google 가격 정보 · {selected.googlePriceRange || selected.googlePriceLevel}</p>}
                 {selected.hours && <p className="place-hours"><Clock3 size={13}/>{selected.hours}</p>}
                 {selected.tip && <div className="family-tip">{selected.category === "검색" ? "방문 팁" : "가족 추천"} · {selected.tip}</div>}
