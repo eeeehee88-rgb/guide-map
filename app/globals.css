@@ -405,7 +405,46 @@ body:has(.place-detail-overlay){overflow:hidden}
 .place-detail-popup .place-actions{position:sticky;bottom:0;z-index:2;margin:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}
 .place-detail-popup .ai-disclaimer{margin-bottom:2px}
 
+/* Keep late-loading photos and AI analysis in one stable detail flow. */
+.place-detail-popup-scroll{display:flex;flex-direction:column;min-width:0;padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+.place-detail-popup .place-photo-section,
+.place-detail-popup .selected-place-photo,
+.place-detail-popup .selected-place,
+.place-contact-row,
+.google-detail-block,
+.weekly-hours,
+.review-block,
+.place-offerings,
+.place-insight-loading,
+.place-detail-popup .ai-place-card,
+.place-detail-popup .place-actions{flex:0 0 auto;min-width:0}
+.place-detail-popup .place-photo-section,
+.place-detail-popup .selected-place-photo{order:0}
+.place-detail-popup .selected-place{order:1}
+.place-contact-row{order:2}
+.google-detail-block,
+.weekly-hours{order:3}
+.review-block{order:4}
+.place-insight-loading{order:5}
+.place-offerings{order:6}
+.place-detail-popup .ai-place-card{order:7}
+.place-detail-popup .place-actions{order:8}
+.place-photo-gallery{height:190px;grid-template-rows:1fr 1fr}
+.place-detail-popup .selected-place-photo{width:calc(100% - 32px);height:190px;margin:14px 16px 10px;border-radius:14px}
+.place-detail-popup .ai-card-head{align-items:flex-start;gap:8px}
+.place-detail-popup .ai-card-head span{min-width:0}
+.place-detail-popup .ai-tip-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.place-detail-popup .ai-famous>div{min-width:0}
+.place-detail-popup .ai-famous span{max-width:100%;overflow-wrap:anywhere}
+.place-detail-popup .place-offerings article b,
+.place-detail-popup .ai-item-list span,
+.place-detail-popup .ai-summary,
+.place-detail-popup .ai-tip-grid p{overflow-wrap:anywhere}
+
 @media(max-width:380px){
   .place-contact-row{grid-template-columns:1fr}
   .place-contact-row a+a{padding-left:0;border-left:0;border-top:1px solid var(--line)}
+  .place-photo-gallery,
+  .place-detail-popup .selected-place-photo{height:180px}
+  .place-detail-popup .ai-tip-grid{grid-template-columns:1fr}
 }
