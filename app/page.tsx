@@ -64,6 +64,12 @@ const station: Point = {
 };
 
 const categories: Category[] = ["전체","관광","맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집","온천·휴식","아이와 함께","역사","숙박","교통"];
+const initialAreaPoint: Point = {
+  id:"area-center", name:"이누야마 중심", sub:"여행 지역 기준 위치", category:"검색",
+  lat:35.3845, lng:136.9417, color:"#174da4", hours:"",
+  description:"여행 지역 길찾기의 기본 출발점입니다.", tip:"", query:"이누야마 일본"
+};
+
 const categoryColors: Record<Category,string> = {
   "전체":"#247565","관광":"#275fbd","맛집":"#ef6a4c","카페":"#c56892","디저트":"#d36a9a",
   "쇼핑":"#e54473","편의점":"#168a55","소품샵":"#93701f","전통시장":"#d88b24","주류":"#8052a5","이자카야·술집":"#a65068",
@@ -198,7 +204,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   };
   const googlePriceLevel = place.priceLevel ? priceLabels[String(place.priceLevel).toUpperCase()] || String(place.priceLevel) : undefined;
   const reviewHighlights = Array.isArray(place.reviews)
-    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean)
+    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,5)
     : [];
   const summaryText = (value:any):string => {
     if (typeof value === "string") return value;
@@ -238,7 +244,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const photoUrls = Array.isArray(place.photos)
     ? place.photos.slice(0,10).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
     : [];
-  const detailedReviews = Array.isArray(place.reviews) ? place.reviews.map((review:any)=>({
+  const detailedReviews = Array.isArray(place.reviews) ? place.reviews.slice(0,5).map((review:any)=>({
     text:String(review.text || review.originalText || "").trim(),
     rating:typeof review.rating === "number" ? review.rating : undefined,
     author:review.authorAttribution?.displayName,
@@ -402,7 +408,7 @@ export default function Home() {
   const [googleReady, setGoogleReady] = useState(false);
   const [mapsKey, setMapsKey] = useState("");
   const [category, setCategory] = useState<Category>("전체");
-  const [selected, setSelected] = useState<Point>(spots[0]);
+  const [selected, setSelected] = useState<Point>(initialAreaPoint);
   const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
   const [placeDetailLoading, setPlaceDetailLoading] = useState(false);
   const [placeInsightLoading, setPlaceInsightLoading] = useState(false);
@@ -455,7 +461,7 @@ export default function Home() {
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [cloudSaving, setCloudSaving] = useState(false);
-  const [areaPoint, setAreaPoint] = useState<Point | null>(null);
+  const [areaPoint, setAreaPoint] = useState<Point | null>(initialAreaPoint);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
   const travelAreaRef=useRef(travelArea);
@@ -818,13 +824,7 @@ export default function Home() {
           await place.fetchFields({ fields:[
             "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
             "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-            "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
-            "reviews","editorialSummary","generativeSummary","reviewSummary","googleMapsLinks",
-            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
-            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
-            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
-            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
-            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
+            "currentOpeningHours","regularOpeningHours"
           ] });
           if (!place.location) return;
           const details = googlePlaceDetails(place, "지도에서 선택한 장소");
@@ -848,7 +848,7 @@ export default function Home() {
             weeklyHours:details.weeklyHours,reviewSummary:details.reviewSummary,serviceOptions:details.serviceOptions,
             parkingOptions:details.parkingOptions,accessibility:details.accessibility,paymentOptions:details.paymentOptions,
             photoUrls:details.photoUrls,detailedReviews:details.detailedReviews,photosPage:details.photosPage,reviewsPage:details.reviewsPage,
-            detailLoaded:true,photoUrl:details.photoUrls?.[0] || place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
+            photoUrl:details.photoUrls?.[0] || place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
           };
           setPlaceResults((current) => current.some((item) => item.id === point.id)
             ? current.map((item)=>item.id===point.id?mergePointData(item,point):item)
@@ -1185,7 +1185,6 @@ export default function Home() {
           setGuideRecommendations(cached.recommendations);
           setAiGuideArea(cached.area || travelArea.trim());
           aiGuideAreaRef.current=cached.area || travelArea.trim();
-          setSelected(cached.recommendations[0]);
           setDestinationId(cached.recommendations[0].id);
           void hydrateRecommendationPreviews(cached.recommendations);
           return cached.recommendations as Point[];
@@ -1326,7 +1325,6 @@ export default function Home() {
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
       fallbackPoints = fallbackPoints.slice(0,60);
       setGuideRecommendations(fallbackPoints);
-      setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
       setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
       void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
@@ -1409,7 +1407,7 @@ export default function Home() {
       setSelected((current)=>{
         const updated=enhancedRecommendations.find((point)=>point.id===current.id);
         if (updated) return mergePointData(current,updated);
-        return current.id==="area-center" && !placeDetailOpen ? enhancedRecommendations[0] : current;
+        return current;
       });
       setDestinationId((current)=>current==="area-center" ? enhancedRecommendations[0].id : current);
       routeLayerRef.current?.setMap(null);
@@ -1420,7 +1418,6 @@ export default function Home() {
       if (fallbackPoints.length) {
         setAiOverview("AI 추천 응답이 늦어 Google 장소 후보를 먼저 표시했어요. 사진과 상세 정보는 이어서 보강합니다.");
         setGuideRecommendations(fallbackPoints);
-        setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
         setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
         void hydrateRecommendationPreviews(fallbackPoints);
         setRecommendationError("");
@@ -1886,7 +1883,7 @@ export default function Home() {
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
                     <b>{placeDisplayName(spot)}</b>
-                    <p className="recommendation-summary">{spot.listSummary || spot.description}</p>
+                    <p className="recommendation-summary">{spot.description}</p>
                     <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
                     <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
                   </div>
@@ -1946,10 +1943,10 @@ export default function Home() {
             {Boolean(selected.reviewSummary||selected.detailedReviews?.length||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
               <h3>Google 이용자 후기</h3>
               {selected.reviewSummary&&<p>{selected.reviewSummary}</p>}
-              {selected.detailedReviews?.length ? selected.detailedReviews.map((review,index)=><blockquote key={index}>
+              {selected.detailedReviews?.length ? selected.detailedReviews.slice(0,5).map((review,index)=><blockquote key={index}>
                 <header><b>{review.rating?`★ ${review.rating.toFixed(1)}`:"이용자 후기"}</b><span>{[review.author,review.time].filter(Boolean).join(" · ")}</span></header>
                 {review.text}
-              </blockquote>) : selected.reviewHighlights?.map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+              </blockquote>) : selected.reviewHighlights?.slice(0,5).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
               {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
             {placeInsightLoading&&<div className="place-insight-loading"><Sparkles size={15}/>Google 설명과 후기를 바탕으로 판매 메뉴를 정리하고 있어요.</div>}
