@@ -198,7 +198,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   };
   const googlePriceLevel = place.priceLevel ? priceLabels[String(place.priceLevel).toUpperCase()] || String(place.priceLevel) : undefined;
   const reviewHighlights = Array.isArray(place.reviews)
-    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,3)
+    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean)
     : [];
   const summaryText = (value:any):string => {
     if (typeof value === "string") return value;
@@ -238,7 +238,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   const photoUrls = Array.isArray(place.photos)
     ? place.photos.slice(0,10).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
     : [];
-  const detailedReviews = Array.isArray(place.reviews) ? place.reviews.slice(0,5).map((review:any)=>({
+  const detailedReviews = Array.isArray(place.reviews) ? place.reviews.map((review:any)=>({
     text:String(review.text || review.originalText || "").trim(),
     rating:typeof review.rating === "number" ? review.rating : undefined,
     author:review.authorAttribution?.displayName,
@@ -561,7 +561,7 @@ export default function Home() {
       try {
         const google=(window as any).google;
         const {Place}=await google.maps.importLibrary("places");
-        const place=new Place({id:selected.googlePlaceId,requestedLanguage:"ko",requestedRegion:"JP"});
+        const place=new Place({id:selected.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
         const mergePlace=(detailLoaded=false)=>{
           if (cancelled) return;
           const details=googlePlaceDetails(place,selected.name);
@@ -607,7 +607,7 @@ export default function Home() {
     };
     void loadDetails();
     return()=>{cancelled=true;};
-  },[placeDetailOpen,googleReady,selected.id,selected.googlePlaceId,selected.detailLoaded]);
+  },[placeDetailOpen,googleReady,selected.id,selected.googlePlaceId,selected.detailLoaded,travelCountry]);
 
   useEffect(()=>{
     if (!placeDetailOpen || !selected.detailLoaded || !selected.googlePlaceId || selected.detailAiLoaded) return;
@@ -620,6 +620,7 @@ export default function Home() {
       const enriched:Point={
         ...selected,
         description:detail?.description || selected.description,
+        listSummary:detail?.description || selected.listSummary || selected.description,
         aiRecommendedItems:items.length?items:selected.aiRecommendedItems,
         aiFamousItems:items.length?items.map((item:any)=>String(item.name)).slice(0,3):selected.aiFamousItems,
         recommendedMenu:items.length?items.map((item:any)=>String(item.name)).join(" · "):selected.recommendedMenu,
@@ -813,8 +814,18 @@ export default function Home() {
         event.stop();
         try {
           const { Place } = await google.maps.importLibrary("places");
-          const place = new Place({ id:event.placeId,requestedLanguage:"ko",requestedRegion:"JP" });
-          await place.fetchFields({ fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"] });
+          const place = new Place({ id:event.placeId,requestedLanguage:"ko",requestedRegion:travelCountry });
+          await place.fetchFields({ fields:[
+            "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
+            "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
+            "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
+            "reviews","editorialSummary","generativeSummary","reviewSummary","googleMapsLinks",
+            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
+            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
+            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
+            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
+            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
+          ] });
           if (!place.location) return;
           const details = googlePlaceDetails(place, "지도에서 선택한 장소");
           const point:Point = {
@@ -827,14 +838,22 @@ export default function Home() {
             color:"#356fbd",
             hours:details.hours,
             description:details.description,
+            listSummary:details.description,
             tip:"영업시간과 가족 이동 동선을 확인한 뒤 방문해 주세요.",
             query:place.googleMapsURI || place.displayName || ""
             ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress
             ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
-            ,googlePlaceId:place.id,photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
+            ,googlePlaceId:place.id,phone:details.phone,website:details.website,openNow:details.openNow,
+            weeklyHours:details.weeklyHours,reviewSummary:details.reviewSummary,serviceOptions:details.serviceOptions,
+            parkingOptions:details.parkingOptions,accessibility:details.accessibility,paymentOptions:details.paymentOptions,
+            photoUrls:details.photoUrls,detailedReviews:details.detailedReviews,photosPage:details.photosPage,reviewsPage:details.reviewsPage,
+            detailLoaded:true,photoUrl:details.photoUrls?.[0] || place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
           };
-          setPlaceResults((current) => current.some((item) => item.id === point.id) ? current : [point, ...current]);
+          setPlaceResults((current) => current.some((item) => item.id === point.id)
+            ? current.map((item)=>item.id===point.id?mergePointData(item,point):item)
+            : [point, ...current]
+          );
           setSelected(point);
           setSheet("places");
           setSheetCollapsed(false);
@@ -884,7 +903,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea, routeSearchPoints]);
+  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea, travelCountry, routeSearchPoints]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -917,7 +936,7 @@ export default function Home() {
   const mergePointData = (current:Point, incoming:Point) => ({
     ...current,
     ...incoming,
-    listSummary:current.listSummary || incoming.listSummary || current.description || incoming.description,
+    listSummary:incoming.listSummary || incoming.description || current.listSummary || current.description,
     photoUrl:incoming.photoUrl || current.photoUrl,
     photoUrls:incoming.photoUrls?.length ? incoming.photoUrls : current.photoUrls,
     detailLoaded:current.detailLoaded || incoming.detailLoaded,
@@ -954,7 +973,11 @@ export default function Home() {
       const value = localStorage.getItem(`place-name-ko:${point.id}`);
       if (value) cached.set(point.id,value);
     });
-    const missing = points.filter((point)=>!cached.has(point.id) && containsJapanese(point.originalName || point.name));
+    const missing = points.filter((point)=>!cached.has(point.id) && (
+      containsJapanese(point.originalName || point.name)
+      || Boolean(point.googlePlaceId && !/[가-힣]/.test(point.name))
+      || Boolean(point.originalName && point.originalName !== point.name)
+    ));
     if (missing.length) {
       try {
         const response = await fetch("/api/ai-localize",{
@@ -982,7 +1005,7 @@ export default function Home() {
     });
   };
 
-  const hydrateRecommendationPreviews = async (points:Point[], limit=18) => {
+  const hydrateRecommendationPreviews = async (points:Point[], limit=60) => {
     if (!googleReady || !points.length) return;
     const targets=points.filter((point)=>point.googlePlaceId && !point.detailLoaded).slice(0,limit);
     if (!targets.length) return;
@@ -994,8 +1017,13 @@ export default function Home() {
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
           "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-          "currentOpeningHours","regularOpeningHours","editorialSummary","generativeSummary","reviewSummary",
-          "googleMapsLinks","reviews"
+          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
+          "editorialSummary","generativeSummary","reviewSummary","googleMapsLinks","reviews",
+          "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
+          "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
+          "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
+          "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
+          "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
         ]});
         const details=googlePlaceDetails(place,point.name);
         return {
@@ -1918,10 +1946,10 @@ export default function Home() {
             {Boolean(selected.reviewSummary||selected.detailedReviews?.length||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
               <h3>Google 이용자 후기</h3>
               {selected.reviewSummary&&<p>{selected.reviewSummary}</p>}
-              {selected.detailedReviews?.length ? selected.detailedReviews.slice(0,5).map((review,index)=><blockquote key={index}>
+              {selected.detailedReviews?.length ? selected.detailedReviews.map((review,index)=><blockquote key={index}>
                 <header><b>{review.rating?`★ ${review.rating.toFixed(1)}`:"이용자 후기"}</b><span>{[review.author,review.time].filter(Boolean).join(" · ")}</span></header>
                 {review.text}
-              </blockquote>) : selected.reviewHighlights?.slice(0,3).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+              </blockquote>) : selected.reviewHighlights?.map((review,index)=><blockquote key={index}>{review}</blockquote>)}
               {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
             {placeInsightLoading&&<div className="place-insight-loading"><Sparkles size={15}/>Google 설명과 후기를 바탕으로 판매 메뉴를 정리하고 있어요.</div>}
