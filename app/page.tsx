@@ -352,6 +352,23 @@ function priceGuideFor(type:string,country:TravelCountry="JP") {
   return "입장료는 방문 전 확인";
 }
 
+function hasYenCurrency(value:string) {
+  return /(?:¥|￥|円|JPY|JP¥)/i.test(value);
+}
+
+function hasWonCurrency(value:string) {
+  return /(?:₩|원|KRW)/i.test(value);
+}
+
+function normalizePriceForCountry(value:string | undefined, type:string, country:TravelCountry) {
+  const text = String(value || "").trim();
+  const fallback = priceGuideFor(type,country);
+  if (!text) return fallback;
+  if (country === "KR" && hasYenCurrency(text)) return fallback;
+  if (country === "JP" && hasWonCurrency(text)) return fallback;
+  return text;
+}
+
 function subwayLinesFor(area:string) {
   const key = area.toLowerCase();
   if (/이누야마|犬山|inuyama/.test(key)) return [
@@ -1841,6 +1858,15 @@ export default function Home() {
       ? selected.detailedReviews
       : (selected.reviewHighlights || []).map((text)=>({text}))
   ).filter((review)=>review.text).slice(0,5);
+  const selectedPriceType = selected.placeType || guideGroup(selected);
+  const selectedGooglePrice = selected.googlePriceRange || selected.googlePriceLevel
+    ? normalizePriceForCountry(selected.googlePriceRange || selected.googlePriceLevel,selectedPriceType,travelCountry)
+    : "";
+  const selectedAiPrice = normalizePriceForCountry(selected.aiPrice,selectedPriceType,travelCountry);
+  const selectedRecommendedItems = (selected.aiRecommendedItems || []).map((item)=>({
+    ...item,
+    price:normalizePriceForCountry(item.price,selectedPriceType,travelCountry)
+  }));
 
   return (
     <main
@@ -1923,7 +1949,7 @@ export default function Home() {
                     <b>{placeDisplayName(spot)}</b>
                     <p className="recommendation-summary">{placeSummary(spot)}</p>
                     <p className="recommendation-menu">{spot.aiRecommendedItems?.[0]?.name || spot.recommendedMenu || spot.sub}</p>
-                    <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{spot.aiRecommendedItems?.[0]?.price||spot.aiPrice}</strong>}</footer>
+                    <footer>{spot.rating&&<span>★ {spot.rating.toFixed(1)}</span>}{distance!==null&&<span>{distance<1 ? `${Math.round(distance*1000)}m` : `${distance.toFixed(1)}km`}</span>}{(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice)&&<strong>{normalizePriceForCountry(spot.aiRecommendedItems?.[0]?.price||spot.aiPrice,spot.placeType||guideGroup(spot),travelCountry)}</strong>}</footer>
                   </div>
                   <Navigation size={18}/>
                 </button>;
@@ -1955,7 +1981,7 @@ export default function Home() {
                 </div>}
                 {placeDetailLoading&&<div className="place-detail-loading"><Sparkles size={14}/>Google 상세 정보를 불러오는 중…</div>}
                 <p>{placeSummary(selected)}</p>
-                {(selected.googlePriceRange||selected.googlePriceLevel)&&<p className="place-price">Google 가격 정보 · {selected.googlePriceRange || selected.googlePriceLevel}</p>}
+                {selectedGooglePrice&&<p className="place-price">Google 가격 정보 · {selectedGooglePrice}</p>}
                 {selected.hours && <p className="place-hours"><Clock3 size={13}/>{selected.hours}</p>}
                 {selected.tip && <div className="family-tip">{selected.category === "검색" ? "방문 팁" : "가족 추천"} · {selected.tip}</div>}
               </div>
@@ -1988,9 +2014,9 @@ export default function Home() {
               {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
             {placeInsightLoading&&<div className="place-insight-loading"><Sparkles size={15}/>Google 설명과 후기를 바탕으로 판매 메뉴를 정리하고 있어요.</div>}
-            {selected.detailAiLoaded&&selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<section className="place-offerings">
+            {selected.detailAiLoaded&&selectedRecommendedItems.length>0&&<section className="place-offerings">
               <div><span>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected))?"이곳에서 파는 음식":"이곳에서 살 수 있는 것"}</span><small>{selected.detailAiSource}</small></div>
-              <div>{selected.aiRecommendedItems.map((item,index)=><article key={`${item.name}-${index}`}><b>{item.name}</b><strong>{item.price}</strong></article>)}</div>
+              <div>{selectedRecommendedItems.map((item,index)=><article key={`${item.name}-${index}`}><b>{item.name}</b><strong>{item.price}</strong></article>)}</div>
             </section>}
             <div className="place-actions">
               <button onClick={() => { setDestinationId(selected.id); setPlaceDetailOpen(false); setSheet("route"); }}><Navigation size={17}/> 여기까지 길찾기</button>
@@ -2003,12 +2029,12 @@ export default function Home() {
               <div className="ai-card-head"><span><Sparkles size={15}/>AI 가족 맞춤 추천</span>{selected.aiBestTime&&<small>{selected.aiBestTime}</small>}</div>
               <p className="ai-summary">{selected.aiReason}</p>
               {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "대표 메뉴" : guideGroup(selected)==="쇼핑" ? "추천 쇼핑" : "추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
-              {!selected.detailAiLoaded&&selected.aiRecommendedItems&&selected.aiRecommendedItems.length>0&&<div className="ai-item-list">
+              {!selected.detailAiLoaded&&selectedRecommendedItems.length>0&&<div className="ai-item-list">
                 <b>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected)) ? "추천 메뉴와 가격" : ["쇼핑","편의점","소품샵","주류","전통시장"].includes(guideGroup(selected)) ? "추천 상품과 가격" : "추천 항목과 가격"}</b>
-                <div>{selected.aiRecommendedItems.map((item,index)=><p key={`${item.name}-${index}`}><span>{item.name}</span><strong>{item.price}</strong></p>)}</div>
+                <div>{selectedRecommendedItems.map((item,index)=><p key={`${item.name}-${index}`}><span>{item.name}</span><strong>{item.price}</strong></p>)}</div>
               </div>}
               <div className="ai-tip-grid">
-                <div><small>예상 가격</small><p>{selected.aiPrice || "방문 전 확인"}</p></div>
+                <div><small>예상 가격</small><p>{selectedAiPrice}</p></div>
                 <div><small>가족 방문 팁</small><p>{selected.aiFamilyTip || "방문 전 확인"}</p></div>
                 {selected.aiVisitTip&&<div><small>방문 팁</small><p>{selected.aiVisitTip}</p></div>}
                 {selected.aiParkingTip&&<div><small>주차 정보</small><p>{selected.aiParkingTip}</p></div>}
@@ -2222,7 +2248,7 @@ export default function Home() {
                 ).join("");
                 const nearbyMapUrl=mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=11&size=640x520&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${nearbyMarkers}&key=${encodeURIComponent(mapsKey)}` : "";
                 const itemLine=(point:Point)=>
-                  point.aiRecommendedItems?.slice(0,2).map((item)=>`${item.name} ${item.price}`).join(" · ")
+                  point.aiRecommendedItems?.slice(0,2).map((item)=>`${item.name} ${normalizePriceForCountry(item.price,point.placeType||guideGroup(point),travelCountry)}`).join(" · ")
                   || point.aiFamousItems?.slice(0,2).join(" · ")
                   || point.recommendedMenu
                   || `${guideGroup(point)} 대표 항목은 방문 전 확인`;
@@ -2231,7 +2257,7 @@ export default function Home() {
                   {point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}
                   <p>{point.aiReason||point.description}</p>
                   <strong>{kind==="food"?"추천 메뉴":kind==="shop"?"추천 상품":"여기서 할 일"} · {itemLine(point)}</strong>
-                  <footer><span>◷ {point.hours||"운영시간 확인"}</span><b>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</b></footer>
+                  <footer><span>◷ {point.hours||"운영시간 확인"}</span><b>{normalizePriceForCountry(point.aiPrice,point.placeType||guideGroup(point),travelCountry)}</b></footer>
                 </article>;
                 return <>
                   <article className="guide-page atlas-page atlas-map-page">
@@ -2270,7 +2296,7 @@ export default function Home() {
                       <section className="atlas-nearby-map">{nearbyMapUrl?<img src={nearbyMapUrl} alt={`${travelArea} 근교 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}<div>{nearbyPlaces.map((point,index)=><p key={point.id}><span style={{background:pointColor(point)}}>{index+1}</span><b>{placeDisplayName(point)}</b><small>{guideGroup(point)}</small></p>)}</div></section>
                       <aside>
                         <h3 className="atlas-section-title food">근교 식당·카페 추천</h3>
-                        {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{point.aiPrice||priceGuideFor(point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
+                        {foodPlaces.slice(0,6).map((point,index)=><article className="atlas-nearby-card" key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span>{index+1}</span><div><b>{placeDisplayName(point)}</b><p>{point.aiReason||point.description}</p><strong>{itemLine(point)}</strong><footer>◷ {point.hours||"시간 확인"} <em>{normalizePriceForCountry(point.aiPrice,point.placeType||guideGroup(point),travelCountry)}</em></footer></div></article>)}
                       </aside>
                     </div>
                     <section className="atlas-bottom-info"><div><h3>추천 이동 방법</h3><p>🚗 렌터카 · 주차와 이동시간 확인</p><p>🚌 대중교통 · 환승과 막차 확인</p></div><div><h3>알아두면 좋은 팁</h3><p>{aiGuidePlan.familyTips?.join(" · ")}</p></div><div><h3>비 오는 날</h3><p>{aiGuidePlan.weatherBackup?.join(" · ")}</p></div></section>
