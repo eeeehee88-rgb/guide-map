@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   if (!key) return Response.json({ error: "AI configuration is required." }, { status: 503 });
 
   const body = await request.json().catch(() => null);
-  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0, 18) : [];
+  const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0, 14) : [];
   if (!body?.trip || !candidates.length) {
     return Response.json({ error: "Trip and candidate places are required." }, { status: 400 });
   }
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       thinking: { type: "disabled" },
       response_format: { type: "json_object" },
       temperature: 0.2,
-      max_tokens: 2200,
+      max_tokens: 1800,
       messages: [
         {
           role: "system",

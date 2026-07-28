@@ -921,9 +921,29 @@ export default function Home() {
     persistSavedPlaces(exists ? savedPlaces.filter((item) => item.id !== point.id) : [...savedPlaces, point]);
   };
 
+  const mergePointData = (current:Point, incoming:Point) => ({
+    ...current,
+    ...incoming,
+    photoUrl:incoming.photoUrl || current.photoUrl,
+    photoUrls:incoming.photoUrls?.length ? incoming.photoUrls : current.photoUrls,
+    detailLoaded:current.detailLoaded || incoming.detailLoaded,
+    detailAiLoaded:current.detailAiLoaded || incoming.detailAiLoaded,
+    phone:incoming.phone || current.phone,
+    website:incoming.website || current.website,
+    weeklyHours:incoming.weeklyHours?.length ? incoming.weeklyHours : current.weeklyHours,
+    detailedReviews:incoming.detailedReviews?.length ? incoming.detailedReviews : current.detailedReviews,
+    serviceOptions:incoming.serviceOptions?.length ? incoming.serviceOptions : current.serviceOptions,
+    parkingOptions:incoming.parkingOptions?.length ? incoming.parkingOptions : current.parkingOptions,
+    accessibility:incoming.accessibility?.length ? incoming.accessibility : current.accessibility,
+    paymentOptions:incoming.paymentOptions?.length ? incoming.paymentOptions : current.paymentOptions,
+    reviewSummary:incoming.reviewSummary || current.reviewSummary,
+    photosPage:incoming.photosPage || current.photosPage,
+    reviewsPage:incoming.reviewsPage || current.reviewsPage
+  });
+
   const mergePointEverywhere = (enriched:Point) => {
-    const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?{...item,...enriched}:item);
-    setSelected((current)=>current.id===enriched.id?{...current,...enriched}:current);
+    const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?mergePointData(item,enriched):item);
+    setSelected((current)=>current.id===enriched.id?mergePointData(current,enriched):current);
     setPlaceResults(replace);
     setGuideRecommendations(replace);
     setSavedPlaces((items)=>{
@@ -1016,9 +1036,10 @@ export default function Home() {
         language:"ko",
         maxResultCount:12
       });
+      const quickCategorySearch = Boolean(queryOverride);
       const next:Point[] = places.filter((place:any) => {
         if (!place.location) return false;
-        if (!matchesPlaceKeyword(place, query)) return false;
+        if (!quickCategorySearch && !matchesPlaceKeyword(place, query)) return false;
         const point = { lat:place.location.lat(), lng:place.location.lng() };
         const currentCenter = areaPoint || (isInuyamaArea ? station : null);
         const insideBounds = areaBounds?.contains ? areaBounds.contains(point) : true;
@@ -1297,7 +1318,7 @@ export default function Home() {
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
-          candidates:candidates.slice(0,18).map((point)=>({
+          candidates:candidates.slice(0,14).map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
             rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
             googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
@@ -1349,7 +1370,10 @@ export default function Home() {
       const next = [...aiSelected,...localizedFallback].slice(0,60);
       if (!next.length) throw new Error();
       setAiOverview(aiData.result.overview || "");
-      setGuideRecommendations(next);
+      setGuideRecommendations((current)=>next.map((point)=>{
+        const existing=current.find((item)=>item.id===point.id) || fallbackPoints.find((item)=>item.id===point.id);
+        return existing ? mergePointData(existing,point) : point;
+      }));
       void hydrateRecommendationPreviews(next);
       const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
       setAiGuidePlan(preparedGuide);
@@ -1362,8 +1386,12 @@ export default function Home() {
           area:travelArea.trim(),recommendations:next,guide:preparedGuide
         }));
       } catch {}
-      setSelected(next[0]);
-      setDestinationId(next[0].id);
+      setSelected((current)=>{
+        const updated=next.find((point)=>point.id===current.id);
+        if (updated) return mergePointData(current,updated);
+        return current.id==="area-center" && !placeDetailOpen ? next[0] : current;
+      });
+      setDestinationId((current)=>current==="area-center" ? next[0].id : current);
       routeLayerRef.current?.setMap(null);
       routeLayerRef.current = null;
       setRoute(null);
@@ -1675,27 +1703,29 @@ export default function Home() {
       const sourcePlaces=[...regionalSavedPlaces,...places]
         .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index);
       let enrichedPlaces=sourcePlaces;
-      try {
-        const google=(window as any).google;
-        const {Place}=await google.maps.importLibrary("places");
-        const detailTargets=sourcePlaces
-          .filter((point)=>point.googlePlaceId && ["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"].includes(guideGroup(point)))
-          .slice(0,14);
-        const detailResults=await Promise.allSettled(detailTargets.map(async(point)=>{
-          const place=new Place({id:point.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
-          await place.fetchFields({fields:["editorialSummary","reviews","priceRange","priceLevel","primaryTypeDisplayName"]});
-          const details=googlePlaceDetails(place,point.name);
-          return {
-            ...point,
-            description:details.description||point.description,
-            reviewHighlights:details.reviewHighlights?.length?details.reviewHighlights:point.reviewHighlights,
-            googlePriceRange:details.googlePriceRange||point.googlePriceRange,
-            googlePriceLevel:details.googlePriceLevel||point.googlePriceLevel
-          };
-        }));
-        const detailMap=new Map(detailResults.flatMap((result)=>result.status==="fulfilled"?[[result.value.id,result.value] as const]:[]));
-        enrichedPlaces=sourcePlaces.map((point)=>detailMap.get(point.id)||point);
-      } catch {}
+      if (force) {
+        try {
+          const google=(window as any).google;
+          const {Place}=await google.maps.importLibrary("places");
+          const detailTargets=sourcePlaces
+            .filter((point)=>point.googlePlaceId && ["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"].includes(guideGroup(point)))
+            .slice(0,6);
+          const detailResults=await Promise.allSettled(detailTargets.map(async(point)=>{
+            const place=new Place({id:point.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
+            await place.fetchFields({fields:["editorialSummary","reviews","priceRange","priceLevel","primaryTypeDisplayName"]});
+            const details=googlePlaceDetails(place,point.name);
+            return {
+              ...point,
+              description:details.description||point.description,
+              reviewHighlights:details.reviewHighlights?.length?details.reviewHighlights:point.reviewHighlights,
+              googlePriceRange:details.googlePriceRange||point.googlePriceRange,
+              googlePriceLevel:details.googlePriceLevel||point.googlePriceLevel
+            };
+          }));
+          const detailMap=new Map(detailResults.flatMap((result)=>result.status==="fulfilled"?[[result.value.id,result.value] as const]:[]));
+          enrichedPlaces=sourcePlaces.map((point)=>detailMap.get(point.id)||point);
+        } catch {}
+      }
       const response = await fetch("/api/ai-guide",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1707,7 +1737,7 @@ export default function Home() {
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
           hotel,
-          places:enrichedPlaces.map((point)=>({
+          places:enrichedPlaces.slice(0,12).map((point)=>({
             id:point.id,name:point.name,category:guideGroup(point),lat:point.lat,lng:point.lng,
             reason:point.aiReason,price:point.aiPrice,famousItems:point.aiFamousItems,
             recommendedItems:point.aiRecommendedItems,recommendedMenu:point.recommendedMenu,
@@ -1737,6 +1767,7 @@ export default function Home() {
         };
         setGuideRecommendations((current)=>current.map(mergeItems));
         setSavedPlaces((current)=>current.map(mergeItems));
+        setSelected((current)=>mergeItems(current));
       }
       setAiGuidePlan(data.guide);
       setAiGuideArea(requestedArea);
