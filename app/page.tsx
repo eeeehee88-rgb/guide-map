@@ -1330,9 +1330,15 @@ export default function Home() {
         (Array.isArray(aiData.result.localizations)?aiData.result.localizations:[])
           .map((item:any)=>[String(item.id),String(item.koreanName||"").trim()])
       );
-      const recommendationMap = new Map<string, any>(aiData.result.recommendations.map((item:any)=>[String(item.id),item]));
-      const aiSelected = candidates.filter((point)=>recommendationMap.has(point.id)).map((point)=>{
-        const ai:any = recommendationMap.get(point.id);
+      const aiRecommendations = aiData.result.recommendations as any[];
+      const recommendationMap = new Map<string, any>(aiRecommendations.map((item:any)=>[String(item.id),item]));
+      const candidateById = new Map(candidates.map((point)=>[point.id,point] as const));
+      const candidateByName = new Map(candidates.map((point)=>[String(point.name).trim().toLowerCase(),point] as const));
+      const aiSelected = aiRecommendations.map((ai:any,index:number)=>{
+        const requestedId=String(ai?.id||"");
+        const point = candidateById.get(requestedId)
+          || candidateByName.get(String(ai?.name||ai?.koreanName||"").trim().toLowerCase())
+          || candidates[Math.min(index,candidates.length-1)];
         const localizedName=localizationMap.get(point.id);
         return {
           ...point,
