@@ -460,7 +460,7 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v12:${JSON.stringify({
+  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v14:${JSON.stringify({
     area:travelArea.trim(),country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
@@ -1153,9 +1153,7 @@ export default function Home() {
         if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
           setAiOverview(cached.overview || "");
           setGuideRecommendations(cached.recommendations);
-          setAiGuidePlan(cached.guide || null);
           setAiGuideArea(cached.area || travelArea.trim());
-          aiGuidePlanRef.current=cached.guide || null;
           aiGuideAreaRef.current=cached.area || travelArea.trim();
           setSelected(cached.recommendations[0]);
           setDestinationId(cached.recommendations[0].id);
@@ -1307,7 +1305,7 @@ export default function Home() {
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
           },
-          candidates:candidates.slice(0,14).map((point)=>({
+          candidates:candidates.slice(0,8).map((point)=>({
             id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
             rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
             googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
@@ -1367,15 +1365,10 @@ export default function Home() {
         return existing ? mergePointData(existing,point) : point;
       }));
       void hydrateRecommendationPreviews(enhancedRecommendations);
-      const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
-      setAiGuidePlan(preparedGuide);
-      setAiGuideArea(travelArea.trim());
-      aiGuidePlanRef.current=preparedGuide;
-      aiGuideAreaRef.current=travelArea.trim();
       try {
         localStorage.setItem(aiCacheKey(activeCountry),JSON.stringify({
           createdAt:Date.now(),overview:aiData.result.overview || "",
-          area:travelArea.trim(),recommendations:enhancedRecommendations,guide:preparedGuide
+          area:travelArea.trim(),recommendations:enhancedRecommendations
         }));
       } catch {}
       setSelected((current)=>{
@@ -1390,6 +1383,11 @@ export default function Home() {
       return enhancedRecommendations;
     } catch (error:any) {
       if (fallbackPoints.length) {
+        setAiOverview("AI 추천 응답이 늦어 Google 장소 후보를 먼저 표시했어요. 사진과 상세 정보는 이어서 보강합니다.");
+        setGuideRecommendations(fallbackPoints);
+        setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
+        setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
+        void hydrateRecommendationPreviews(fallbackPoints);
         setRecommendationError("");
         return fallbackPoints;
       }
