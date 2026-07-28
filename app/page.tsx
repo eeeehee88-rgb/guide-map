@@ -222,8 +222,14 @@ function googlePlaceDetails(place:any, fallbackName:string) {
     FREE:"무료",INEXPENSIVE:"저렴한 편",MODERATE:"보통 가격대",EXPENSIVE:"가격대 높음",VERY_EXPENSIVE:"고가"
   };
   const googlePriceLevel = place.priceLevel ? priceLabels[String(place.priceLevel).toUpperCase()] || String(place.priceLevel) : undefined;
+  const reviewText = (review:any) => {
+    const value = review?.text || review?.originalText;
+    if (typeof value === "string") return value.trim();
+    if (typeof value?.text === "string") return value.text.trim();
+    return "";
+  };
   const reviewHighlights = Array.isArray(place.reviews)
-    ? place.reviews.map((review:any)=>String(review.text || review.originalText || "").trim()).filter(Boolean).slice(0,5)
+    ? place.reviews.map(reviewText).filter(Boolean).slice(0,5)
     : [];
   const summaryText = (value:any):string => {
     if (typeof value === "string") return value;
@@ -264,7 +270,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
     ? place.photos.slice(0,10).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
     : [];
   const detailedReviews = Array.isArray(place.reviews) ? place.reviews.slice(0,5).map((review:any)=>({
-    text:String(review.text || review.originalText || "").trim(),
+    text:reviewText(review),
     rating:typeof review.rating === "number" ? review.rating : undefined,
     author:review.authorAttribution?.displayName,
     time:review.relativePublishTimeDescription
@@ -1830,6 +1836,11 @@ export default function Home() {
   };
 
   const authAvailable = hasSupabaseConfig();
+  const selectedReviewItems = (
+    selected.detailedReviews?.length
+      ? selected.detailedReviews
+      : (selected.reviewHighlights || []).map((text)=>({text}))
+  ).filter((review)=>review.text).slice(0,5);
 
   return (
     <main
@@ -1967,13 +1978,13 @@ export default function Home() {
               <summary>요일별 운영시간 전체 보기</summary>
               <div>{selected.weeklyHours.map((item)=><p key={item}>{item}</p>)}</div>
             </details>}
-            {Boolean(selected.reviewSummary||selected.detailedReviews?.length||selected.reviewHighlights?.length)&&<section className="google-detail-block review-block">
+            {Boolean(selected.reviewSummary||selectedReviewItems.length)&&<section className="google-detail-block review-block">
               <h3>Google 이용자 후기</h3>
               {selected.reviewSummary&&<p>{selected.reviewSummary}</p>}
-              {selected.detailedReviews?.length ? selected.detailedReviews.slice(0,5).map((review,index)=><blockquote key={index}>
+              {selectedReviewItems.map((review,index)=><blockquote key={index}>
                 <header><b>{review.rating?`★ ${review.rating.toFixed(1)}`:"이용자 후기"}</b><span>{[review.author,review.time].filter(Boolean).join(" · ")}</span></header>
                 {review.text}
-              </blockquote>) : selected.reviewHighlights?.slice(0,5).map((review,index)=><blockquote key={index}>{review}</blockquote>)}
+              </blockquote>)}
               {selected.reviewsPage&&<a className="google-more-link" href={selected.reviewsPage} target="_blank" rel="noreferrer">Google 지도에서 후기 전체 보기</a>}
             </section>}
             {placeInsightLoading&&<div className="place-insight-loading"><Sparkles size={15}/>Google 설명과 후기를 바탕으로 판매 메뉴를 정리하고 있어요.</div>}

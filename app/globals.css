@@ -100,7 +100,7 @@ button{min-height:44px;-webkit-tap-highlight-color:transparent}
 .sheet-heading small{color:#6f7975;font-size:11px;font-weight:600}
 .sheet-heading h2{color:#131e19;font-size:20px;line-height:26px;letter-spacing:-.02em}
 .icon-close{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:#3f4945}
-.category-scroll{gap:8px;padding-bottom:14px}
+.category-scroll{gap:8px;padding-top:4px;padding-bottom:14px}
 .category-scroll button{min-height:38px;padding:8px 14px;border-color:color-mix(in srgb,var(--category-color) 45%,#bec9c4);background:color-mix(in srgb,var(--category-color) 8%,#fff);font-size:12px}
 .category-scroll button.active{box-shadow:0 0 0 2px #fff,0 0 0 4px color-mix(in srgb,var(--category-color) 28%,transparent)}
 .selected-place-photo{height:190px;margin-bottom:12px;border-radius:16px}
@@ -263,9 +263,9 @@ button:disabled{cursor:not-allowed;opacity:.58}
 }
 @media(max-width:350px){
   .mobile-header small{max-width:160px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-  .place-actions{flex-wrap:wrap}
-  .place-actions>button:first-child{flex-basis:calc(100% - 54px)}
-  .place-actions a{flex-basis:100%;width:100%}
+  .bottom-sheet:not(.detail-open) .place-actions{flex-wrap:wrap}
+  .bottom-sheet:not(.detail-open) .place-actions>button:first-child{flex-basis:calc(100% - 54px)}
+  .bottom-sheet:not(.detail-open) .place-actions a{flex-basis:100%;width:100%}
   .traveler-row{grid-template-columns:32px minmax(0,1fr) 68px}
   .traveler-row>button{grid-column:3}
 }
@@ -404,9 +404,11 @@ body:has(.place-detail-overlay){overflow:hidden}
 .place-offerings article{padding:10px 0;border-top:1px dashed #ded6e8}
 .place-detail-popup .ai-place-card{background:#fff}
 .place-detail-popup .ai-tip-grid>div{background:#fbfaf7}
-.place-detail-popup .place-actions{position:relative;bottom:auto;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:10px;margin:0;padding:15px 16px calc(26px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff;backdrop-filter:none}
-.place-detail-popup .place-actions button{min-width:0;min-height:46px;padding:0 12px;white-space:normal;line-height:1.2}
+.place-detail-popup .place-actions{position:relative;bottom:auto;z-index:1;display:grid;grid-template-columns:minmax(0,.9fr) 48px 78px;gap:8px;margin:0;padding:12px 16px calc(20px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff;backdrop-filter:none}
+.place-detail-popup .place-actions button,.place-detail-popup .place-actions a{height:44px;min-height:44px;font-size:12px}
+.place-detail-popup .place-actions button{min-width:0;padding:0 8px;white-space:nowrap;line-height:1.1}
 .place-detail-popup .place-actions .save-action{width:48px;min-width:48px;padding:0}
+.place-detail-popup .place-actions a{width:auto;min-width:0;white-space:nowrap}
 .place-detail-popup .ai-disclaimer{margin-bottom:2px}
 
 /* Keep late-loading photos and AI analysis in one stable detail flow. */
