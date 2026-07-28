@@ -404,11 +404,13 @@ body:has(.place-detail-overlay){overflow:hidden}
 .place-offerings article{padding:10px 0;border-top:1px dashed #ded6e8}
 .place-detail-popup .ai-place-card{background:#fff}
 .place-detail-popup .ai-tip-grid>div{background:#fbfaf7}
-.place-detail-popup .place-actions{position:relative;bottom:auto;z-index:1;margin:0 16px;padding:15px 0 calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff;backdrop-filter:none}
+.place-detail-popup .place-actions{position:relative;bottom:auto;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:10px;margin:0;padding:15px 16px calc(26px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fff;backdrop-filter:none}
+.place-detail-popup .place-actions button{min-width:0;min-height:46px;padding:0 12px;white-space:normal;line-height:1.2}
+.place-detail-popup .place-actions .save-action{width:48px;min-width:48px;padding:0}
 .place-detail-popup .ai-disclaimer{margin-bottom:2px}
 
 /* Keep late-loading photos and AI analysis in one stable detail flow. */
-.place-detail-popup-scroll{display:flex;flex-direction:column;min-width:0;padding-bottom:calc(28px + env(safe-area-inset-bottom))}
+.place-detail-popup-scroll{display:flex;flex-direction:column;min-width:0;padding-bottom:calc(40px + env(safe-area-inset-bottom))}
 .place-detail-popup .place-photo-section,
 .place-detail-popup .selected-place-photo,
 .place-detail-popup .selected-place,

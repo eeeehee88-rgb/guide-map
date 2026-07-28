@@ -1307,10 +1307,6 @@ export default function Home() {
       }));
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
       fallbackPoints = fallbackPoints.slice(0,60);
-      setGuideRecommendations(fallbackPoints);
-      setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
-      setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
-      void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1370,20 +1366,16 @@ export default function Home() {
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
       const next = aiSelected.slice(0,60);
-      const aiPointMap = new Map(next.map((point)=>[point.id,point] as const));
-      const enhancedRecommendations = fallbackPoints.map((point)=>{
-        const updated=aiPointMap.get(point.id);
-        return updated ? mergePointData(point,updated) : point;
+      const enhancedRecommendations = next.map((point)=>{
+        const existing=fallbackPoints.find((item)=>item.id===point.id);
+        return existing ? mergePointData(existing,point) : point;
       });
       if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
       setAiOverview(aiData.result.overview || "");
-      setGuideRecommendations((current)=>{
-        const base=current.length ? current : fallbackPoints;
-        return base.map((point)=>{
-          const updated=aiPointMap.get(point.id);
-          return updated ? mergePointData(point,updated) : point;
-        });
-      });
+      setGuideRecommendations((current)=>enhancedRecommendations.map((point)=>{
+        const existing=current.find((item)=>item.id===point.id);
+        return existing ? mergePointData(existing,point) : point;
+      }));
       void hydrateRecommendationPreviews(enhancedRecommendations);
       const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
       setAiGuidePlan(preparedGuide);
