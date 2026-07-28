@@ -578,6 +578,16 @@ export default function Home() {
     areaBoundsRef.current=areaBounds;
   },[travelArea,areaPoint,areaBounds]);
 
+  useEffect(()=>{
+    if (!placeDetailOpen || !needsReadableKoreanName(selected)) return;
+    let cancelled=false;
+    void localizePointNames([selected]).then(([localized])=>{
+      if (cancelled || !localized || localized.name === selected.name) return;
+      mergePointEverywhere(localized);
+    });
+    return()=>{cancelled=true;};
+  },[placeDetailOpen,selected.id,selected.name,selected.originalName]);
+
   useEffect(() => {
     if (!placeDetailOpen || !googleReady || !selected.googlePlaceId || selected.detailLoaded) return;
     let cancelled=false;
@@ -595,16 +605,7 @@ export default function Home() {
             query:place.googleMapsURI || selected.query,
             photoUrl:details.photoUrls?.[0] || selected.photoUrl
           };
-          setSelected(enriched);
-          const replace=(items:Point[])=>items.map((item)=>item.id===enriched.id?enriched:item);
-          setPlaceResults(replace);
-          setGuideRecommendations(replace);
-          setSavedPlaces((items)=>{
-            if (!items.some((item)=>item.id===enriched.id)) return items;
-            const next=replace(items);
-            localStorage.setItem("saved-google-places",JSON.stringify(next));
-            return next;
-          });
+          mergePointEverywhere(enriched);
         };
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
@@ -652,16 +653,7 @@ export default function Home() {
         detailAiSource:detail?.source || "Google 장소 정보",
         detailAiLoaded:true
       };
-      setSelected(enriched);
-      const replace=(points:Point[])=>points.map((point)=>point.id===enriched.id?enriched:point);
-      setPlaceResults(replace);
-      setGuideRecommendations(replace);
-      setSavedPlaces(points=>{
-        if (!points.some(point=>point.id===enriched.id)) return points;
-        const next=replace(points);
-        localStorage.setItem("inuyama-saved-places",JSON.stringify(next));
-        return next;
-      });
+      mergePointEverywhere(enriched);
     };
     const loadInsight=async()=>{
       const cacheKey=`ai-place-detail-v3:${travelCountry}:${selected.googlePlaceId}`;
