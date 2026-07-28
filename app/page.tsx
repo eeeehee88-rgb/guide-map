@@ -701,7 +701,7 @@ export default function Home() {
     return pointDistanceKm(recommendationCenter,a)-pointDistanceKm(recommendationCenter,b);
   });
   const listedSpots = category === "전체" ? sortedVisibleSpots.slice(0,15) : sortedVisibleSpots;
-  const recommendationPending = !guideRecommendations.length && !recommendationError;
+  const recommendationPending = guideLoading && !guideRecommendations.length && !recommendationError;
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -1306,6 +1306,11 @@ export default function Home() {
         aiParkingTip:"전용·인근 주차장은 Google 지도에서 확인해 주세요."
       }));
       setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
+      fallbackPoints = fallbackPoints.slice(0,60);
+      setGuideRecommendations(fallbackPoints);
+      setSelected((current)=>current.id==="area-center" && !placeDetailOpen ? fallbackPoints[0] : current);
+      setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
+      void hydrateRecommendationPreviews(fallbackPoints);
       const aiResponse = await fetch("/api/ai-recommend",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1365,13 +1370,21 @@ export default function Home() {
         return Number(pa?.priority||99)-Number(pb?.priority||99);
       });
       const next = aiSelected.slice(0,60);
+      const aiPointMap = new Map(next.map((point)=>[point.id,point] as const));
+      const enhancedRecommendations = fallbackPoints.map((point)=>{
+        const updated=aiPointMap.get(point.id);
+        return updated ? mergePointData(point,updated) : point;
+      });
       if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
       setAiOverview(aiData.result.overview || "");
-      setGuideRecommendations((current)=>next.map((point)=>{
-        const existing=current.find((item)=>item.id===point.id) || fallbackPoints.find((item)=>item.id===point.id);
-        return existing ? mergePointData(existing,point) : point;
-      }));
-      void hydrateRecommendationPreviews(next);
+      setGuideRecommendations((current)=>{
+        const base=current.length ? current : fallbackPoints;
+        return base.map((point)=>{
+          const updated=aiPointMap.get(point.id);
+          return updated ? mergePointData(point,updated) : point;
+        });
+      });
+      void hydrateRecommendationPreviews(enhancedRecommendations);
       const preparedGuide = aiData.result.guide?.days ? aiData.result.guide as AiGuidePlan : null;
       setAiGuidePlan(preparedGuide);
       setAiGuideArea(travelArea.trim());
@@ -1380,20 +1393,24 @@ export default function Home() {
       try {
         localStorage.setItem(aiCacheKey(activeCountry),JSON.stringify({
           createdAt:Date.now(),overview:aiData.result.overview || "",
-          area:travelArea.trim(),recommendations:next,guide:preparedGuide
+          area:travelArea.trim(),recommendations:enhancedRecommendations,guide:preparedGuide
         }));
       } catch {}
       setSelected((current)=>{
-        const updated=next.find((point)=>point.id===current.id);
+        const updated=enhancedRecommendations.find((point)=>point.id===current.id);
         if (updated) return mergePointData(current,updated);
-        return current.id==="area-center" && !placeDetailOpen ? next[0] : current;
+        return current.id==="area-center" && !placeDetailOpen ? enhancedRecommendations[0] : current;
       });
-      setDestinationId((current)=>current==="area-center" ? next[0].id : current);
+      setDestinationId((current)=>current==="area-center" ? enhancedRecommendations[0].id : current);
       routeLayerRef.current?.setMap(null);
       routeLayerRef.current = null;
       setRoute(null);
-      return next;
+      return enhancedRecommendations;
     } catch (error:any) {
+      if (fallbackPoints.length) {
+        setRecommendationError("");
+        return fallbackPoints;
+      }
       setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       setRecommendationError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       return [] as Point[];
@@ -1846,7 +1863,7 @@ export default function Home() {
             </div>
             {recommendationPending && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천 리스트 검색 중입니다</b><small>AI 추천 결과가 나온 뒤 사진과 지도 표시를 적용합니다.</small></div>}
             {recommendationError && !guideRecommendations.length && <div className="recommendation-loading error"><Sparkles size={20}/><b>AI 추천을 아직 받지 못했어요</b><small>{recommendationError}</small><button onClick={()=>void buildAreaGuide()}>다시 검색</button></div>}
-            {!recommendationPending && !recommendationError && <div className="recommendation-list">
+            {guideRecommendations.length > 0 && <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
                 return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
