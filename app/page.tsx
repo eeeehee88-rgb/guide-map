@@ -688,7 +688,7 @@ export default function Home() {
     const insideRadius = center ? pointDistanceKm(center, point) <= 20 : true;
     return insideBounds && insideRadius;
   };
-  const recommendationPool = guideLoading ? [] : guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
+  const recommendationPool = guideRecommendations;
   const regionalSavedPlaces = savedPlaces.filter(isPointInCurrentArea);
   const regionalPlaceResults = placeResults.filter(isPointInCurrentArea);
   const combinedPlacePool = [...regionalPlaceResults, ...recommendationPool]
@@ -700,6 +700,7 @@ export default function Home() {
     return pointDistanceKm(recommendationCenter,a)-pointDistanceKm(recommendationCenter,b);
   });
   const listedSpots = category === "전체" ? sortedVisibleSpots.slice(0,15) : sortedVisibleSpots;
+  const recommendationPending = !guideRecommendations.length && !routeError;
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
@@ -1392,11 +1393,6 @@ export default function Home() {
       setRoute(null);
       return next;
     } catch (error:any) {
-      if (fallbackPoints.length) {
-        setGuideRecommendations(fallbackPoints);
-        setRouteError("추천 장소를 먼저 표시했어요. AI 상세 정보는 가이드북에서 다시 만들 수 있어요.");
-        return fallbackPoints;
-      }
       setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       return [] as Point[];
     } finally {
@@ -1625,7 +1621,7 @@ export default function Home() {
   };
 
   const selectRecommendationCategory = (item:Category) => {
-    const recommendationCandidates = guideRecommendations.length ? guideRecommendations : isInuyamaArea ? spots : [];
+    const recommendationCandidates = guideRecommendations;
     const candidates = item === "전체" ? recommendationCandidates : recommendationCandidates.filter((point)=>guideGroup(point)===item);
     if (!candidates.length) {
       setRouteError(`${travelArea} 추천 장소 중 '${item}' 카테고리 결과가 없어요.`);
@@ -1846,8 +1842,8 @@ export default function Home() {
               <div><b>{category === "전체" ? "가까운 추천 장소" : `${category} 추천`}</b><small>{travelArea} 중심에서 가까운 순서</small></div>
               <span>{listedSpots.length}곳</span>
             </div>
-            {guideLoading && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천을 먼저 정리하고 있어요</b><small>추천 결과가 확정되면 사진과 지도 표시를 한 번에 적용합니다.</small></div>}
-            {!guideLoading && <div className="recommendation-list">
+            {recommendationPending && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천 리스트 검색 중입니다</b><small>AI 추천 결과가 나온 뒤 사진과 지도 표시를 적용합니다.</small></div>}
+            {!recommendationPending && <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
                 return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
@@ -2129,7 +2125,7 @@ export default function Home() {
               {(() => {
                 const baseGuidePlaces = guideRecommendations.length
                   ? [...regionalSavedPlaces, ...guideRecommendations].filter((point,index,items)=>items.findIndex((item)=>item.name===point.name)===index)
-                  : regionalSavedPlaces.length ? regionalSavedPlaces : isInuyamaArea ? spots.slice(0,8) : [];
+                  : regionalSavedPlaces.length ? regionalSavedPlaces : [];
                 const aiStopIds = aiGuidePlan.days.flatMap((day)=>day.stops.map((stop)=>stop.id));
                 const guidePlaces = [...baseGuidePlaces].sort((a,b)=>{
                   const ai=aiStopIds.indexOf(a.id), bi=aiStopIds.indexOf(b.id);
