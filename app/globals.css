@@ -1116,3 +1116,295 @@ html,body{
   border-radius:8px;
   object-fit:cover;
 }
+
+/* UI consistency and overflow pass */
+:root{
+  --control-bg:#fffdf8;
+  --control-border:#d8cbb5;
+  --control-shadow:0 8px 18px rgba(34,43,38,.07);
+}
+
+button{
+  border-radius:12px;
+}
+
+.bottom-sheet button,
+.bottom-sheet a,
+.login-form>button,
+.area-setup-search button,
+.guide-toolbar>button,
+.guide-recommend-panel button{
+  min-height:42px;
+  border-radius:12px;
+  font-weight:900;
+}
+
+.calculate-button,
+.save-trip-button,
+.guide-create-button,
+.login-form>button,
+.area-setup-search button,
+.hotel-search button,
+.area-search button,
+.route-search-input>button,
+.guide-recommend-panel button{
+  border:1px solid transparent;
+  background:linear-gradient(135deg,var(--green),#2f806b);
+  color:#fff;
+  box-shadow:0 8px 16px rgba(31,111,95,.16);
+}
+
+.round-button,
+.locate-button,
+.icon-close,
+.result-save,
+.result-route,
+.saved-row>button:not(.saved-main),
+.place-detail-popup-head button,
+.place-actions .save-action{
+  border:1px solid rgba(216,203,181,.9);
+  background:var(--control-bg);
+  color:var(--green-deep);
+  box-shadow:0 6px 14px rgba(34,43,38,.07);
+}
+
+.login-switch button,
+.saved-hotel button,
+.icon-close{
+  min-height:36px;
+}
+
+.login-form input,
+.area-setup-search input,
+.route-search-input input,
+.guide-recommend-panel input,
+.trip-dates label,
+.traveler-row>input,
+.traveler-row>label,
+.route-selects,
+.area-search,
+.hotel-search{
+  border:1px solid rgba(216,203,181,.9);
+  border-radius:14px;
+  background:var(--control-bg);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+.login-form input,
+.area-setup-search input,
+.route-search-input input,
+.guide-recommend-panel input,
+.traveler-row>input{
+  height:50px;
+  padding:0 14px;
+}
+
+.area-search input,
+.hotel-search input,
+.trip-dates input,
+.traveler-row>label input,
+.route-selects select,
+.guide-date-fields input{
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+
+.area-search input,
+.hotel-search input{
+  width:0;
+  height:100%;
+  padding:0 6px;
+}
+
+.route-selects select{
+  height:36px;
+  background-color:transparent!important;
+}
+
+.guide-date-fields input{
+  border-bottom:1px solid rgba(216,203,181,.9)!important;
+}
+
+.login-form input:focus-visible,
+.area-setup-search input:focus-visible,
+.route-search-input input:focus-visible,
+.guide-recommend-panel input:focus-visible,
+.traveler-row>input:focus-visible,
+.route-selects:focus-within,
+.area-search:focus-within,
+.hotel-search:focus-within,
+.traveler-row>label:focus-within,
+.trip-dates label:focus-within{
+  border-color:var(--green)!important;
+  box-shadow:0 0 0 3px rgba(31,111,95,.14)!important;
+}
+
+.recommendation-list{
+  gap:10px;
+}
+
+.recommendation-list>button{
+  min-height:118px;
+  grid-template-columns:88px minmax(0,1fr) 28px;
+  gap:12px;
+  align-items:start;
+  padding:12px;
+  border-radius:18px;
+  overflow:hidden;
+}
+
+.recommendation-list>button>img,
+.recommendation-placeholder{
+  width:88px;
+  height:88px;
+  aspect-ratio:1/1;
+  border-radius:14px;
+  object-fit:cover;
+  align-self:start;
+}
+
+.recommendation-list>button>div{
+  display:grid;
+  min-width:0;
+  align-content:start;
+}
+
+.recommendation-list b{
+  min-width:0;
+  line-height:1.25;
+}
+
+.recommendation-list em{
+  max-width:100%;
+}
+
+.recommendation-list .recommendation-summary{
+  display:-webkit-box;
+  min-height:0;
+  margin-top:6px;
+  white-space:normal;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+}
+
+.recommendation-list .recommendation-menu{
+  width:max-content;
+  max-width:100%;
+  white-space:nowrap;
+}
+
+.recommendation-list footer{
+  min-width:0;
+  flex-wrap:wrap;
+  row-gap:3px;
+}
+
+.recommendation-list footer strong{
+  max-width:100%;
+}
+
+.recommendation-list>button>svg{
+  width:20px;
+  height:20px;
+  margin-top:34px;
+}
+
+.google-result,
+.saved-row,
+.search-results button,
+.route-search-results>button{
+  border-radius:14px;
+  background:var(--control-bg);
+  box-shadow:0 4px 12px rgba(34,43,38,.04);
+}
+
+.result-save,
+.result-route,
+.saved-row>button:not(.saved-main){
+  width:42px;
+  height:42px;
+  min-height:42px;
+  padding:0;
+}
+
+.route-mode{
+  background:#fff8ec;
+  border-color:rgba(216,203,181,.9);
+}
+
+.route-mode button{
+  min-height:44px;
+  border-radius:999px;
+}
+
+.place-actions{
+  gap:8px;
+}
+
+.place-actions button,
+.place-actions a{
+  min-height:44px;
+  padding:0 10px;
+  white-space:nowrap;
+}
+
+.place-detail-popup .place-actions{
+  grid-template-columns:minmax(0,1fr) 48px minmax(72px,.32fr);
+}
+
+.place-detail-popup .place-actions button,
+.place-detail-popup .place-actions a{
+  min-width:0;
+}
+
+.place-contact-row a{
+  min-height:54px;
+}
+
+.traveler-row{
+  grid-template-columns:34px minmax(0,1fr) 92px 40px;
+}
+
+.traveler-row>button{
+  min-height:40px;
+  border-radius:12px;
+}
+
+.guide-toolbar{
+  gap:8px;
+}
+
+.guide-toolbar>button,
+.guide-recommend-panel button{
+  white-space:nowrap;
+}
+
+@media(max-width:380px){
+  .recommendation-list>button{
+    min-height:108px;
+    grid-template-columns:76px minmax(0,1fr) 22px;
+    gap:9px;
+    padding:10px;
+  }
+
+  .recommendation-list>button>img,
+  .recommendation-placeholder{
+    width:76px;
+    height:76px;
+  }
+
+  .recommendation-list .recommendation-summary{
+    -webkit-line-clamp:2;
+  }
+
+  .traveler-row{
+    grid-template-columns:32px minmax(0,1fr) 76px 36px;
+  }
+
+  .place-detail-popup .place-actions{
+    grid-template-columns:minmax(0,1fr) 46px 74px;
+  }
+}
