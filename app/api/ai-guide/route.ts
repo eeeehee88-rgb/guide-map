@@ -32,8 +32,9 @@ const CATEGORY_SPECS = [
 ];
 
 const GUIDEBOOK_SYSTEM_PROMPT = `
-너는 Guide-trip의 기존 추천 기능과 완전히 별개로 동작하는 상업용 여행 가이드북 제작 엔진이다.
+너는 Guide-trip의 기존 추천 기능과 완전히 별개로 동작하는 여행 가이드북 제작 엔진이다.
 사용자가 저장한 추천 리스트, 기존 앱의 장소 목록, 추천 이유를 절대 참고하지 않는다.
+title과 subtitle에는 "상업용" 같은 내부 표현을 넣지 않는다. 여행자가 보는 실제 표지 문구만 쓴다.
 오직 입력된 여행 지역과 서버가 Google Maps 기준으로 수집한 좌표/장소/운영정보만 사용한다.
 
 여행 가이드북 제작 프롬프트 (최종 버전)
@@ -310,7 +311,7 @@ function buildFallbackGuide(body: any, areaCenter: { lat: number; lng: number; f
     reason: `${place.mapNumber}번 ${place.nameKo} 방문`,
   }));
   return {
-    title: `${area} 상업용 여행 가이드북`,
+    title: `${area} 여행 가이드북`,
     subtitle: "Google Maps 실제 좌표 기반 A4 가로 여행잡지",
     overview: `${area}의 실제 Google Maps 장소와 좌표를 기준으로 번호, 동선, 맛집, 쇼핑 정보를 구성했습니다.`,
     locationInset: `${areaCenter.formattedAddress} 기준`,
@@ -449,7 +450,7 @@ export async function POST(request: Request) {
             role: "user",
             content: JSON.stringify({
               currentTimeKST: koreaTime,
-              instruction: "아래 Google Maps 수집 장소만 사용해서 상업용 A4 가로 여행 가이드북을 제작하세요. 기존 추천 서비스와 연결하지 마세요.",
+              instruction: "아래 Google Maps 수집 장소만 사용해서 A4 가로 여행 가이드북을 제작하세요. 기존 추천 서비스와 연결하지 마세요. title/subtitle에는 '상업용' 같은 내부 표현을 쓰지 마세요.",
               trip: body.trip,
               hotel: body.hotel,
               areaCenter,

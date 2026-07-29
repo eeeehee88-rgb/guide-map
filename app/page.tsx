@@ -115,6 +115,25 @@ function staticMapPixelPosition(point:{lat:number;lng:number}, center:{lat:numbe
   return { leftPct, topPct };
 }
 
+function fitBoundsZoom(points:{lat:number;lng:number}[], imageWidth:number, imageHeight:number, minZoom=12, maxZoom=17) {
+  const lats = points.map((point)=>point.lat);
+  const lngs = points.map((point)=>point.lng);
+  const bounds = {
+    minLat:Math.min(...lats), maxLat:Math.max(...lats),
+    minLng:Math.min(...lngs), maxLng:Math.max(...lngs)
+  };
+  const center = { lat:(bounds.minLat+bounds.maxLat)/2, lng:(bounds.minLng+bounds.maxLng)/2 };
+  const nw = mercatorWorldPoint(bounds.maxLat, bounds.minLng);
+  const se = mercatorWorldPoint(bounds.minLat, bounds.maxLng);
+  const worldDx = Math.max(Math.abs(se.x-nw.x), 0.6);
+  const worldDy = Math.max(Math.abs(se.y-nw.y), 0.6);
+  const padding = 0.8;
+  const zoomX = Math.log2((imageWidth*padding)/worldDx);
+  const zoomY = Math.log2((imageHeight*padding)/worldDy);
+  const zoom = Math.max(minZoom, Math.min(maxZoom, Math.floor(Math.min(zoomX,zoomY))));
+  return { center, zoom };
+}
+
 type TravelCountry = "JP" | "KR";
 
 function regionHintForArea(area:string):TravelCountry {
@@ -1615,16 +1634,15 @@ export default function Home() {
     setGuideSaving(true);
     const previousTransform = node.style.transform;
     const previousMarginBottom = node.style.marginBottom;
-    const previousWidth = node.style.width;
     try {
       node.style.transform = "none";
       node.style.marginBottom = "0";
-      node.style.width = "720px";
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const rect = node.getBoundingClientRect();
       const dataUrl = await toJpeg(node, {
         quality:.96, pixelRatio:2, backgroundColor:"#ffffff",
-        width:720, height:node.scrollHeight,
-        style:{ transform:"none", margin:"0", width:"720px" }
+        width:Math.ceil(rect.width), height:Math.ceil(rect.height),
+        style:{ transform:"none", margin:"0" }
       });
       const link = document.createElement("a");
       link.download = `${travelArea || "일본"}-가족여행-가이드.jpg`;
@@ -1633,7 +1651,6 @@ export default function Home() {
     } finally {
       node.style.transform = previousTransform;
       node.style.marginBottom = previousMarginBottom;
-      node.style.width = previousWidth;
       setGuideSaving(false);
     }
   };
@@ -2388,13 +2405,15 @@ export default function Home() {
                 const markerParams = mapPlaces.map((point) =>
                   `&markers=${encodeURIComponent(`size:tiny|color:0x${point.markerColor.replace("#","")}|label:${Math.min(point.mapNumber,9)}|${point.lat},${point.lng}`)}`
                 ).join("");
-                const mapCenter = mapPlaces[0] ? `${mapPlaces[0].lat},${mapPlaces[0].lng}` : `${travelArea} ${travelCountry==="KR"?"대한민국":"일본"}`;
                 const MAP_IMG_W=642, MAP_IMG_H=590;
-                const centerPoint = mapPlaces[0] ? {lat:mapPlaces[0].lat,lng:mapPlaces[0].lng} : null;
-                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=14&size=${MAP_IMG_W}x${MAP_IMG_H}&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
+                const mapFit = mapPlaces.length ? fitBoundsZoom(mapPlaces, MAP_IMG_W, MAP_IMG_H) : null;
+                const centerPoint = mapFit?.center || null;
+                const mapZoom = mapFit?.zoom || 14;
+                const mapCenter = centerPoint ? `${centerPoint.lat},${centerPoint.lng}` : `${travelArea} ${travelCountry==="KR"?"대한민국":"일본"}`;
+                const staticMapUrl = mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=${mapZoom}&size=${MAP_IMG_W}x${MAP_IMG_H}&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${markerParams}&key=${encodeURIComponent(mapsKey)}` : "";
                 const mapPhotoPins = (mapsKey && centerPoint) ? mapPlaces
                   .filter((point)=>point.photoUrl)
-                  .map((point)=>({point,...staticMapPixelPosition(point,centerPoint,14,MAP_IMG_W,MAP_IMG_H)}))
+                  .map((point)=>({point,...staticMapPixelPosition(point,centerPoint,mapZoom,MAP_IMG_W,MAP_IMG_H)}))
                   .filter((pin)=>pin.leftPct>=8 && pin.leftPct<=92 && pin.topPct>=8 && pin.topPct<=88)
                   .slice(0,6) : [];
                 const locationInsetUrl = (mapsKey && centerPoint) ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=8&size=200x160&scale=2&language=ko&region=${travelCountry}&maptype=roadmap&markers=${encodeURIComponent(`size:small|color:0xe0393f|${centerPoint.lat},${centerPoint.lng}`)}&key=${encodeURIComponent(mapsKey)}` : "";
@@ -2402,6 +2421,7 @@ export default function Home() {
                 const attractions=guidePlaces.filter((point)=>["관광지","사진스팟","교통"].includes(point.category)).slice(0,12);
                 const foodPlaces=guidePlaces.filter((point)=>["맛집","카페"].includes(point.category)).slice(0,9);
                 const shoppingPlaces=guidePlaces.filter((point)=>["쇼핑","마켓"].includes(point.category)).slice(0,10);
+                const bestPicks=[...shoppingPlaces].filter((point)=>point.photoUrl).sort((a,b)=>(b.rating||0)-(a.rating||0)).slice(0,3);
                 const routePlaces=aiGuidePlan.days.flatMap((day)=>day.stops)
                   .map((stop)=>guidePlaces.find((point)=>point.id===stop.id)).filter(Boolean).slice(0,8) as GuidebookPlace[];
                 const nearbyPlaces=[...foodPlaces,...attractions,...shoppingPlaces]
@@ -2409,7 +2429,9 @@ export default function Home() {
                 const nearbyMarkers=nearbyPlaces.map((point)=>
                   `&markers=${encodeURIComponent(`size:tiny|color:0x${point.markerColor.replace("#","")}|label:${Math.min(point.mapNumber,9)}|${point.lat},${point.lng}`)}`
                 ).join("");
-                const nearbyMapUrl=mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(mapCenter)}&zoom=11&size=640x520&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${nearbyMarkers}&key=${encodeURIComponent(mapsKey)}` : "";
+                const nearbyFit = nearbyPlaces.length ? fitBoundsZoom(nearbyPlaces,640,520,11,16) : null;
+                const nearbyCenterText = nearbyFit ? `${nearbyFit.center.lat},${nearbyFit.center.lng}` : mapCenter;
+                const nearbyMapUrl=mapsKey ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(nearbyCenterText)}&zoom=${nearbyFit?.zoom||11}&size=640x520&scale=2&language=ko&region=${travelCountry}&maptype=roadmap${nearbyMarkers}&key=${encodeURIComponent(mapsKey)}` : "";
                 const guideName=(point:GuidebookPlace)=>[point.nameKo,point.nameLocal,point.nameEn].filter(Boolean).filter((value,index,items)=>items.indexOf(value)===index).join(" / ");
                 const itemLine=(point:GuidebookPlace)=>
                   point.signatureItems?.slice(0,2).map((item)=>`${item.name} ${item.price||""}`.trim()).join(" · ")
@@ -2427,7 +2449,7 @@ export default function Home() {
                 </article>;
                 return <>
                   <article className="guide-page atlas-page atlas-map-page">
-                    <header className="atlas-title"><span>1/3</span><div><h2>{aiGuidePlan.title}</h2><p>{aiGuidePlan.subtitle || "상업용 여행잡지형 지도 가이드"}</p></div><time>{dateText}</time></header>
+                    <header className="atlas-title"><span>1/3</span><div><h2>{aiGuidePlan.title}</h2><p>{aiGuidePlan.subtitle || "여행잡지형 지도 가이드"}</p></div><time>{dateText}</time></header>
                     <div className="atlas-map-layout">
                       <aside className="atlas-left-rail">
                         <section><h3>🚆 가는 방법</h3><b>{hotel?.name||`${travelArea} 중심`} → 주요 관광지</b><p>대중교통·도보·렌터카를 가족 컨디션에 맞춰 선택하세요.</p></section>
@@ -2462,6 +2484,15 @@ export default function Home() {
                       </main>
                       <aside><h3>주요 스팟 한눈에 보기</h3>{attractions.slice(0,10).map((point)=><article key={point.id}>{point.photoUrl&&<img src={point.photoUrl} alt="" crossOrigin="anonymous"/>}<span style={{background:point.markerColor}}>{point.mapNumber}</span><div><b>{guideName(point)}</b><p>{point.description}</p></div></article>)}</aside>
                     </div>
+                    {bestPicks.length>0 && <section className="atlas-best-picks">
+                      <h3>{travelArea} 기념품 추천 BEST {bestPicks.length}</h3>
+                      <div>{bestPicks.map((point,index)=><article key={point.id}>
+                        <small>{index+1}</small>
+                        <img src={point.photoUrl} alt="" crossOrigin="anonymous"/>
+                        <b>{guideName(point)}</b>
+                        <span>{itemLine(point)}</span>
+                      </article>)}</div>
+                    </section>}
                     <footer className="atlas-tip-row"><b>여행 TIP</b>{(aiGuidePlan.days[0]?.tips?.length ? aiGuidePlan.days[0].tips : aiGuidePlan.localTips || []).slice(0,3).map((tip,index)=><span key={index}>{tip}</span>)}</footer>
                   </article>
 
