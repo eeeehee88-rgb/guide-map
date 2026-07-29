@@ -56,6 +56,9 @@ type AiGuidePlan = {
   familyTips:string[]; weatherBackup:string[];
   localTips?:string[]; checklist?:string[]; selfReview?:string[];
 };
+type StaticGuidebook = {
+  id:string; title:string; areaAliases?:string[]; duration?:string; startDate?:string; endDate?:string; pages:string[];
+};
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -540,6 +543,7 @@ export default function Home() {
   const aiGuidePlanRef = useRef<AiGuidePlan | null>(null);
   const aiGuideAreaRef = useRef("");
   const [aiGuideLoading, setAiGuideLoading] = useState(false);
+  const [staticGuidebook, setStaticGuidebook] = useState<StaticGuidebook | null>(null);
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
@@ -1904,6 +1908,22 @@ export default function Home() {
     const nights = Math.round((end.getTime()-start.getTime())/86400000);
     return nights >= 0 ? { nights, days:nights+1 } : null;
   })();
+  const tripDurationText = tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "";
+  const normalizeGuidebookKey = (value:string) => value.toLowerCase().replace(/\s+/g,"").trim();
+  const loadStaticGuidebook = async (area:string) => {
+    const response = await fetch("/ai-guidebooks/index.json", { cache:"no-store" });
+    if (!response.ok) return null;
+    const guidebooks = await response.json().catch(() => []) as StaticGuidebook[];
+    const areaKey = normalizeGuidebookKey(area);
+    return guidebooks.find((guidebook) => {
+      const areaMatch = (guidebook.areaAliases || []).some((alias)=>normalizeGuidebookKey(alias)===areaKey);
+      const dateMatch = guidebook.startDate && guidebook.endDate
+        ? guidebook.startDate===guideStart && guidebook.endDate===guideEnd
+        : true;
+      const durationMatch = guidebook.duration ? guidebook.duration===tripDurationText : true;
+      return areaMatch && dateMatch && durationMatch && guidebook.pages?.length;
+    }) || null;
+  };
 
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
     setTravelers((current)=>current.map((traveler)=>traveler.id===id ? {...traveler,[field]:value} : traveler));
@@ -1940,6 +1960,7 @@ export default function Home() {
     setAiGuideArea("");
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current="";
+    setStaticGuidebook(null);
     setTripSaved(true);
     setRouteError("");
     setSheet("places");
@@ -1950,6 +1971,16 @@ export default function Home() {
   const openAiGuidebook = async (force=false) => {
     setGuideOpen(true);
     const requestedArea=travelArea.trim();
+    const staticMatch = await loadStaticGuidebook(requestedArea);
+    if (staticMatch) {
+      setStaticGuidebook(staticMatch);
+      setAiGuidePlan(null);
+      setAiGuideArea(requestedArea);
+      setAiGuideLoading(false);
+      setRouteError("");
+      return;
+    }
+    setStaticGuidebook(null);
     if (!force && aiGuidePlan?.days?.length && aiGuidePlan.places?.length && aiGuideArea===requestedArea) {
       setAiGuideLoading(false);
       return;
@@ -2459,7 +2490,17 @@ export default function Home() {
               {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide atlas-guide" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
+              <header>
+                <div><small>AI 이미지 가이드북</small><h2>{staticGuidebook.title}</h2></div>
+                <span>{tripDurationText || "여행 일정"}</span>
+              </header>
+              {staticGuidebook.pages.map((page,index)=>
+                <figure key={page}>
+                  <img src={page} alt={`${staticGuidebook.title} ${index+1}페이지`}/>
+                </figure>
+              )}
+            </div> : aiGuidePlan ? <div className="travel-guide atlas-guide" ref={guideRef}>
               {(() => {
                 const guidePlaces = [...aiGuidePlan.places].sort((a,b)=>a.mapNumber-b.mapNumber);
                 const mapPlaces = guidePlaces.slice(0,20);
