@@ -36,6 +36,7 @@ type TripProfile = { travelers:Traveler[]; startDate:string; endDate:string };
 type SearchResult = { display_name: string; lat: string; lon: string; name?: string; originalName?: string; originalAddress?: string };
 type TransitStep = { instruction:string; line?:string; vehicle?:string; departure?:string; arrival?:string; stops?:number; minutes:number };
 type RouteInfo = { minutes: number; distance: number; coordinates: [number, number][]; estimated?: boolean; transitSteps?:TransitStep[]; transfers?:number };
+type SheetMode = "places" | "search" | "saved" | "route" | "hotel" | "trip";
 type GuidebookPlace = {
   id:string; mapNumber:number; category:string; markerColor:string;
   nameKo:string; nameLocal:string; nameEn?:string; address:string;
@@ -502,7 +503,8 @@ export default function Home() {
   const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
   const [placeDetailLoading, setPlaceDetailLoading] = useState(false);
   const [placeInsightLoading, setPlaceInsightLoading] = useState(false);
-  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("search");
+  const [sheet, setSheet] = useState<SheetMode>("search");
+  const [detailReturnSheet, setDetailReturnSheet] = useState<SheetMode>("places");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
@@ -654,6 +656,19 @@ export default function Home() {
     setSession(null);
     setAuthMessage("");
   };
+  const openPlaceDetail = (point:Point, returnSheet:SheetMode = "places") => {
+    setSelected(point);
+    setDetailReturnSheet(returnSheet);
+    setSheet("places");
+    setSheetCollapsed(false);
+    setPlaceDetailOpen(true);
+    mapRef.current?.panTo({lat:point.lat,lng:point.lng});
+  };
+  const closePlaceDetail = () => {
+    setPlaceDetailOpen(false);
+    setSheet(detailReturnSheet);
+    setSheetCollapsed(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -711,7 +726,11 @@ export default function Home() {
           if (data.trip.guideStart) setGuideStart(data.trip.guideStart);
           if (data.trip.guideEnd) setGuideEnd(data.trip.guideEnd);
           if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
-          if (data.trip.travelArea) setTravelArea(data.trip.travelArea);
+          if (data.trip.travelArea) {
+            setTravelArea(data.trip.travelArea);
+            setSheet("places");
+            setSheetCollapsed(false);
+          }
           if (data.trip.travelCountry === "KR" || data.trip.travelCountry === "JP") setTravelCountry(data.trip.travelCountry);
           setTripSaved(true);
         })
@@ -881,7 +900,10 @@ export default function Home() {
       } catch {}
     }
     const savedArea = localStorage.getItem("travel-search-area");
-    if (savedArea) setTravelArea(savedArea);
+    if (savedArea) {
+      setTravelArea(savedArea);
+      setSheet("places");
+    }
     else setSheet("search");
     const savedCountry=localStorage.getItem("travel-search-country");
     if (savedCountry==="KR"||savedCountry==="JP") setTravelCountry(savedCountry);
@@ -984,10 +1006,7 @@ export default function Home() {
             ? current.map((item)=>item.id===nextPoint.id?mergePointData(item,nextPoint):item)
             : [nextPoint, ...current]
           );
-          setSelected(nextPoint);
-          setSheet("places");
-          setSheetCollapsed(false);
-          setPlaceDetailOpen(true);
+          openPlaceDetail(nextPoint, "places");
         } catch {
           setRouteError("선택한 장소 정보를 불러오지 못했어요.");
         }
@@ -1020,11 +1039,7 @@ export default function Home() {
         zIndex:isCurrentLocation ? 30 : selected.id === point.id ? 20 : 10
       });
       marker.addListener("click", () => {
-        setSelected(point);
-        setSheet("places");
-        setSheetCollapsed(false);
-        setPlaceDetailOpen(true);
-        mapRef.current.panTo({ lat:point.lat, lng:point.lng });
+        openPlaceDetail(point, "places");
       });
       markerLayerRef.current.push(marker);
     });
@@ -1632,6 +1647,8 @@ export default function Home() {
   useEffect(()=>{
     if (!googleReady || initialGuideLoadedRef.current || guideLoading || guideRecommendations.length || !travelArea.trim()) return;
     initialGuideLoadedRef.current=true;
+    setSheet("places");
+    setSheetCollapsed(false);
     void buildAreaGuide();
   },[googleReady, travelArea, guideLoading, guideRecommendations.length]);
 
@@ -1966,7 +1983,7 @@ export default function Home() {
   const authAvailable = authConfigured;
   const authRequired = !authAvailable || !session?.user;
   const authChecking = authAvailable && !authReady;
-  const hasConfiguredArea = Boolean(travelArea.trim() && areaPoint);
+  const hasConfiguredArea = Boolean(travelArea.trim());
   const needsAreaSetup = !authRequired && !hasConfiguredArea;
   const activeTravelers = travelers.filter((traveler)=>traveler.relation.trim() || traveler.age.trim());
   const profileSummary = activeTravelers.length
@@ -2014,7 +2031,7 @@ export default function Home() {
         <div><small>{session?.user ? (hasConfiguredArea ? `${travelArea} 여행` : "여행 지역부터 설정") : "로그인 후 여행 시작"}</small><h1>Guide-trip</h1></div>
         <div className="header-actions">
           <button className={`round-button ${tripSaved ? "ready" : ""}`} disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
-          <button className="round-button" disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
+          <button className={`round-button ${hotel ? "ready" : ""}`} disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
           {session?.user && <button className="round-button logout-button" onClick={signOut} aria-label="로그아웃" title={session.user.email}><LogOut size={18}/></button>}
         </div>
       </header>
@@ -2143,7 +2160,7 @@ export default function Home() {
             {guideRecommendations.length > 0 && <div className="recommendation-list">
               {listedSpots.map((spot)=>{
                 const distance=recommendationCenter ? pointDistanceKm(recommendationCenter,spot) : null;
-                return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>{setSelected(spot);setPlaceDetailOpen(true);mapRef.current?.panTo({lat:spot.lat,lng:spot.lng});}}>
+                return <button key={`list-${spot.id}`} className={selected.id===spot.id ? "active" : ""} style={{"--place-color":pointColor(spot)} as React.CSSProperties} onClick={()=>openPlaceDetail(spot, "places")}>
                   {spot.photoUrl ? <img src={spot.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(spot)}}>{spot.name.slice(0,1)}</span>}
                   <div>
                     <small className="recommendation-category" style={{color:pointColor(spot)}}>{guideGroup(spot)}{spot.priorityShop?" · 필수 쇼핑":""}</small>
@@ -2156,9 +2173,9 @@ export default function Home() {
                 </button>;
               })}
             </div>}
-            {placeDetailOpen && createPortal(<div className="place-detail-overlay" onPointerDown={()=>setPlaceDetailOpen(false)}>
+            {placeDetailOpen && createPortal(<div className="place-detail-overlay" onPointerDown={closePlaceDetail}>
               <section className="place-detail-popup" role="dialog" aria-modal="true" aria-label={`${selected.name} 상세 정보`} onPointerDown={(event)=>event.stopPropagation()}>
-                <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{placeDisplayName(selected)}</b></div><button onClick={()=>setPlaceDetailOpen(false)} aria-label="상세 닫기"><X size={21}/></button></div>
+                <div className="place-detail-popup-head"><div><small>{guideGroup(selected)} 상세 정보</small><b>{placeDisplayName(selected)}</b></div><button onClick={closePlaceDetail} aria-label="상세 닫기"><X size={21}/></button></div>
                 <div className="place-detail-popup-scroll">
             {selected.photoUrls&&selected.photoUrls.length>0 ? <section className="place-photo-section">
               <div className="place-photo-gallery">{selected.photoUrls.map((url,index)=><img key={url} src={url} alt={`${selected.name} Google 등록 사진 ${index+1}`}/>)}</div>
@@ -2173,7 +2190,7 @@ export default function Home() {
                   {selected.originalAddress && <small className="original-address">{selected.originalAddress}</small>}
                 </div>
                 {selected.category === "검색" && <div className="place-meta">
-                  <span style={{background:pointColor(selected),color:"#fff",borderColor:pointColor(selected)}}>{guideGroup(selected)}</span>
+                  <span className="place-type-chip">{guideGroup(selected)}</span>
                   {selected.priorityShop&&<span className="priority-shop-badge">필수 쇼핑</span>}
                   {selected.placeType && <span>{selected.placeType}</span>}
                   {selected.rating && <span>★ {selected.rating.toFixed(1)}{selected.reviewCount ? ` (${selected.reviewCount.toLocaleString("ko-KR")})` : ""}</span>}
@@ -2269,9 +2286,15 @@ export default function Home() {
             {regionalPlaceResults.length > 0 && <p className="search-result-count">{travelArea} 검색 결과 {regionalPlaceResults.length}곳</p>}
             <div className="google-results">
               {regionalPlaceResults.map((point) => (
-                <article key={point.id} className="google-result">
-                  <button className="result-main" onClick={() => {setSelected(point);setSheet("places");setPlaceDetailOpen(true);mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <MapPin size={17} style={{color:pointColor(point)}}/><span><b>{placeDisplayName(point)}</b><small>{point.sub}</small></span>
+                <article key={point.id} className="google-result place-list-card" style={{"--place-color":pointColor(point)} as React.CSSProperties}>
+                  {point.photoUrl ? <img src={point.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span>}
+                  <button className="result-main" onClick={() => openPlaceDetail(point, "search")}>
+                    <span>
+                      <small className="recommendation-category" style={{color:pointColor(point)}}>{guideGroup(point)}</small>
+                      <b>{placeDisplayName(point)}</b>
+                      <p className="recommendation-summary">{placeSummary(point)}</p>
+                      <p className="recommendation-menu">{point.recommendedMenu || point.sub}</p>
+                    </span>
                   </button>
                   <button className="result-save" onClick={() => toggleSavedPlace(point)} aria-label="저장"><Heart size={16} fill={savedPlaces.some((item) => item.id === point.id) ? "currentColor" : "none"}/></button>
                   <button className="result-route" onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
@@ -2288,9 +2311,15 @@ export default function Home() {
             <div className="sheet-heading"><div><small>이 휴대폰에 보관</small><h2>저장한 장소</h2></div><Heart size={19}/></div>
             <div className="saved-list">
               {savedPlaces.map((point) => (
-                <article key={point.id} className="saved-row">
-                  <button className="saved-main" onClick={() => {setSelected(point);setSheet("places");mapRef.current?.panTo({lat:point.lat,lng:point.lng});}}>
-                    <span style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span><div><b>{placeDisplayName(point)}</b><small>{point.sub}</small></div>
+                <article key={point.id} className="saved-row place-list-card" style={{"--place-color":pointColor(point)} as React.CSSProperties}>
+                  {point.photoUrl ? <img src={point.photoUrl} alt=""/> : <span className="recommendation-placeholder" style={{background:pointColor(point)}}>{point.name.slice(0,1)}</span>}
+                  <button className="saved-main" onClick={() => openPlaceDetail(point, "saved")}>
+                    <div>
+                      <small className="recommendation-category" style={{color:pointColor(point)}}>{guideGroup(point)}</small>
+                      <b>{placeDisplayName(point)}</b>
+                      <p className="recommendation-summary">{placeSummary(point)}</p>
+                      <p className="recommendation-menu">{point.recommendedMenu || point.sub}</p>
+                    </div>
                   </button>
                   <button onClick={() => {setDestinationId(point.id);setSheet("route");}} aria-label="길찾기"><Navigation size={16}/></button>
                   <button className="delete-saved" onClick={() => toggleSavedPlace(point)} aria-label="삭제"><Trash2 size={16}/></button>
