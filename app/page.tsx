@@ -544,6 +544,7 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [authConfigured, setAuthConfigured] = useState(hasSupabaseConfig());
   const [authReady, setAuthReady] = useState(false);
+  const [appSplashDone, setAppSplashDone] = useState(false);
   const [authMode, setAuthMode] = useState<"signup" | "login">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -690,6 +691,12 @@ export default function Home() {
       unsubscribe?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const timer = window.setTimeout(() => setAppSplashDone(true), 420);
+    return () => window.clearTimeout(timer);
+  }, [authReady]);
 
   useEffect(() => {
     if (!session) return;
@@ -1979,6 +1986,20 @@ export default function Home() {
     ...item,
     price:normalizePriceForCountry(item.price,selectedPriceType,travelCountry)
   }));
+
+  if (!appSplashDone) {
+    return (
+      <main className="app-splash" aria-label="Guide-trip 로딩">
+        <section>
+          <div className="splash-mark"><MapPin size={26}/><Sparkles size={16}/></div>
+          <small>Guide-trip</small>
+          <h1>여행 지도를 준비하고 있어요</h1>
+          <p>계정과 저장된 여행 설정을 확인하는 중입니다.</p>
+          <div className="splash-progress"><span/></div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main
