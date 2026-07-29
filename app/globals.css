@@ -2661,3 +2661,150 @@ button{
     display:none;
   }
 }
+
+/* Natural sheet cap, compact detail facts, and explicit atlas guide styles */
+.bottom-sheet{
+  padding-top:28px!important;
+  background:#fffdf8!important;
+  background-clip:padding-box;
+}
+
+.bottom-sheet::before{
+  content:"";
+  position:absolute;
+  z-index:7;
+  top:0;
+  left:0;
+  right:0;
+  height:30px;
+  border-radius:24px 24px 0 0;
+  background:#fffdf8;
+  pointer-events:none;
+}
+
+.sheet-toggle{
+  position:absolute!important;
+  top:0!important;
+  left:0;
+  right:0;
+  z-index:9;
+  width:100%!important;
+  min-height:28px!important;
+  height:28px;
+  display:grid!important;
+  place-items:center;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:24px 24px 0 0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+}
+
+.sheet-handle{
+  width:42px;
+  height:4px;
+  margin:0 auto!important;
+  border-radius:99px;
+  background:#d4c8b7;
+}
+
+.bottom-sheet.collapsed{
+  padding-top:28px!important;
+}
+
+.bottom-sheet.collapsed::before{
+  height:100%;
+}
+
+.place-detail-popup .selected-place{
+  padding:17px 16px;
+}
+
+.place-detail-popup .place-main .place-price,
+.place-detail-popup .place-main .place-hours,
+.place-detail-popup .family-tip{
+  min-height:0;
+  display:flex;
+  align-items:flex-start;
+  gap:7px;
+  margin:9px 0 0!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:#5f675f!important;
+  font-size:12px!important;
+  font-weight:700;
+  line-height:1.55!important;
+}
+
+.place-detail-popup .place-main .place-price::before,
+.place-detail-popup .family-tip::before{
+  content:"";
+  flex:0 0 6px;
+  width:6px;
+  height:6px;
+  margin-top:.62em;
+  border-radius:50%;
+  background:var(--place-color);
+  opacity:.8;
+}
+
+.place-detail-popup .place-main .place-hours svg{
+  margin-top:.2em;
+  color:var(--place-color);
+}
+
+.atlas-guide,
+.travel-guide.atlas-guide{
+  width:1120px!important;
+  max-width:none!important;
+  margin:0 auto!important;
+  background:transparent!important;
+  transform:none;
+}
+
+.atlas-guide .guide-page,
+.atlas-guide .atlas-page{
+  width:1120px!important;
+  min-height:790px!important;
+  padding:14px!important;
+  border:1px solid #e3d3ad!important;
+  border-radius:16px!important;
+  background:#fbf6ea!important;
+  color:#2c2417!important;
+  box-shadow:0 10px 30px rgba(120,90,40,.1)!important;
+}
+
+.atlas-guide .atlas-page+.atlas-page{
+  margin-top:14px!important;
+}
+
+.atlas-guide .atlas-title h2{
+  color:#20160a!important;
+}
+
+.atlas-guide .atlas-title p{
+  color:#a05a1e!important;
+}
+
+@media(max-width:760px){
+  .atlas-guide,
+  .travel-guide.atlas-guide{
+    width:1020px!important;
+    max-width:none!important;
+    margin:0!important;
+    transform-origin:top left;
+    transform:scale(calc((100vw - 20px)/1020));
+  }
+
+  .atlas-guide .guide-page,
+  .atlas-guide .atlas-page{
+    width:1020px!important;
+    min-height:720px!important;
+    padding:12px!important;
+  }
+}

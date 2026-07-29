@@ -2448,7 +2448,7 @@ export default function Home() {
               {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide atlas-guide" ref={guideRef}>
               {(() => {
                 const guidePlaces = [...aiGuidePlan.places].sort((a,b)=>a.mapNumber-b.mapNumber);
                 const mapPlaces = guidePlaces.slice(0,20);
