@@ -1063,3 +1063,56 @@ html,body{
     -webkit-line-clamp:2;
   }
 }
+
+/* Guidebook export and map photo overlay fixes */
+@media print{
+  .mobile-app{
+    min-height:0;
+    overflow:visible;
+  }
+  .guide-overlay{
+    overflow:visible;
+  }
+}
+
+.atlas-map-photo-pin{
+  position:absolute;
+  z-index:3;
+  display:grid;
+  justify-items:center;
+  margin:0;
+  transform:translate(-50%,-100%);
+}
+
+.atlas-map-photo-pin img{
+  width:52px;
+  height:40px;
+  border:2px solid #fff;
+  border-radius:7px;
+  object-fit:cover;
+  box-shadow:0 4px 10px rgba(16,35,61,.35);
+}
+
+.atlas-map-photo-pin span{
+  width:18px;
+  height:18px;
+  display:grid;
+  place-items:center;
+  margin-top:-9px;
+  border:2px solid #fff;
+  border-radius:50%;
+  color:#fff;
+  font-size:8px;
+  font-weight:950;
+  box-shadow:0 2px 6px rgba(16,35,61,.3);
+}
+
+.atlas-location-inset{
+  display:block;
+  width:100%;
+  height:74px;
+  margin-top:5px;
+  border:1px solid #9ab6d5;
+  border-radius:8px;
+  object-fit:cover;
+}
