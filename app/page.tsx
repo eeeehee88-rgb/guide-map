@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
-  Heart, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
+  Heart, LogOut, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
 } from "lucide-react";
 import { toJpeg } from "html-to-image";
 import type { Session } from "@supabase/supabase-js";
@@ -722,17 +722,19 @@ export default function Home() {
         ]});
         mergePlace();
         try {
+          await place.fetchFields({fields:["reviews","editorialSummary","googleMapsLinks"]});
+        } catch {}
+        try {
           await place.fetchFields({fields:[
-            "reviews","editorialSummary","generativeSummary","reviewSummary","googleMapsLinks",
+            "generativeSummary","reviewSummary",
             "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
             "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
             "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
             "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
             "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
           ]});
-          mergePlace(true);
         } catch {}
-        if (!cancelled && !place.reviews) mergePlace(true);
+        if (!cancelled) mergePlace(true);
       } catch {
         if (!cancelled) setSelected((current)=>current.id===selected.id?{...current,detailLoaded:true}:current);
       } finally {
@@ -1149,14 +1151,21 @@ export default function Home() {
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
           "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI",
-          "editorialSummary","generativeSummary","reviewSummary","googleMapsLinks","reviews",
-          "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
-          "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
-          "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
-          "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
-          "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
+          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI"
         ]});
+        try {
+          await place.fetchFields({fields:["reviews","editorialSummary","googleMapsLinks"]});
+        } catch {}
+        try {
+          await place.fetchFields({fields:[
+            "generativeSummary","reviewSummary",
+            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
+            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
+            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
+            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
+            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
+          ]});
+        } catch {}
         const details=googlePlaceDetails(place,point.name);
         return {
           ...point,...details,
@@ -1931,14 +1940,10 @@ export default function Home() {
         <div className="header-actions">
           <button className={`round-button ${tripSaved ? "ready" : ""}`} disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
           <button className="round-button" disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
+          {session?.user && <button className="round-button logout-button" onClick={signOut} aria-label="로그아웃" title={session.user.email}><LogOut size={18}/></button>}
         </div>
       </header>
 
-      {session?.user && <section className="account-strip">
-        <span>{session.user.email}</span>
-        <b>{cloudSaving ? "저장 중" : "클라우드 저장"}</b>
-        <button onClick={signOut}>로그아웃</button>
-      </section>}
       {authMessage && <p className="account-message">{authMessage}</p>}
 
       <section className="mobile-map-wrap">
