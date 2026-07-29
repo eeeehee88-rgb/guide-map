@@ -34,7 +34,7 @@ export async function POST(request:Request) {
 
   const body = await request.json().catch(()=>null);
   const places = Array.isArray(body?.places)
-    ? body.places.slice(0,40).map(cleanPlace).filter((place)=>place.id && (place.name || place.originalName))
+    ? body.places.slice(0,40).map(cleanPlace).filter((place:LocalizePlace)=>place.id && (place.name || place.originalName))
     : [];
   if (!places.length) return Response.json({error:"Place names are required."},{status:400});
 
