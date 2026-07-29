@@ -452,6 +452,7 @@ function subwayLinesFor(area:string) {
 }
 
 export default function Home() {
+  const authConfigured = hasSupabaseConfig();
   const supabase = useRef(createBrowserSupabase());
   const mapEl = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -466,14 +467,14 @@ export default function Home() {
   const [placeDetailOpen, setPlaceDetailOpen] = useState(false);
   const [placeDetailLoading, setPlaceDetailLoading] = useState(false);
   const [placeInsightLoading, setPlaceInsightLoading] = useState(false);
-  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("places");
+  const [sheet, setSheet] = useState<"places" | "search" | "saved" | "route" | "hotel" | "trip">("search");
   const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [originId, setOriginId] = useState("station");
-  const [destinationId, setDestinationId] = useState("castle");
+  const [originId, setOriginId] = useState("area-center");
+  const [destinationId, setDestinationId] = useState("area-center");
   const [mode, setMode] = useState<"walk" | "drive" | "transit">("walk");
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -487,19 +488,13 @@ export default function Home() {
   const [placeSearching, setPlaceSearching] = useState(false);
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
   const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
-  const [travelArea, setTravelArea] = useState("이누야마");
+  const [travelArea, setTravelArea] = useState("");
   const [travelCountry, setTravelCountry] = useState<TravelCountry>("JP");
   const [areaMoving, setAreaMoving] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideStart, setGuideStart] = useState("");
   const [guideEnd, setGuideEnd] = useState("");
-  const [travelers, setTravelers] = useState<Traveler[]>([
-    {id:"grandmother",relation:"할머니",age:""},
-    {id:"mother",relation:"엄마",age:""},
-    {id:"father",relation:"아빠",age:""},
-    {id:"child-9",relation:"여아",age:"9"},
-    {id:"child-5",relation:"여아",age:"5"}
-  ]);
+  const [travelers, setTravelers] = useState<Traveler[]>([]);
   const [tripSaved, setTripSaved] = useState(false);
   const [aiOverview, setAiOverview] = useState("");
   const [aiGuidePlan, setAiGuidePlan] = useState<AiGuidePlan | null>(null);
@@ -512,10 +507,12 @@ export default function Home() {
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
   const [recommendationError, setRecommendationError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(!authConfigured);
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const [cloudSaving, setCloudSaving] = useState(false);
-  const [areaPoint, setAreaPoint] = useState<Point | null>(initialAreaPoint);
+  const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
   const travelAreaRef=useRef(travelArea);
@@ -558,14 +555,19 @@ export default function Home() {
   };
   const signInWithEmail = async () => {
     if (!supabase.current || !authEmail.trim()) {
-      setAuthMessage("Set Supabase env first.");
+      setAuthMessage("이메일을 입력하거나 Supabase 환경설정을 먼저 연결해 주세요.");
       return;
     }
-    const { error } = await supabase.current.auth.signInWithOtp({
-      email: authEmail.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-    setAuthMessage(error ? error.message : "Check your email link.");
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.current.auth.signInWithOtp({
+        email: authEmail.trim(),
+        options: { emailRedirectTo: window.location.origin },
+      });
+      setAuthMessage(error ? error.message : "이메일로 보낸 로그인 링크를 확인해 주세요.");
+    } finally {
+      setAuthLoading(false);
+    }
   };
   const signOut = async () => {
     await supabase.current?.auth.signOut();
@@ -574,10 +576,17 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (!supabase.current) return;
-    supabase.current.auth.getSession().then(({ data }) => setSession(data.session));
+    if (!supabase.current) {
+      setAuthReady(true);
+      return;
+    }
+    supabase.current.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
     const { data } = supabase.current.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      setAuthReady(true);
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -801,6 +810,7 @@ export default function Home() {
     }
     const savedArea = localStorage.getItem("travel-search-area");
     if (savedArea) setTravelArea(savedArea);
+    else setSheet("search");
     const savedCountry=localStorage.getItem("travel-search-country");
     if (savedCountry==="KR"||savedCountry==="JP") setTravelCountry(savedCountry);
     const savedTrip = localStorage.getItem("family-trip-profile");
@@ -1186,6 +1196,9 @@ export default function Home() {
       aiGuideAreaRef.current="";
       setCategory("전체");
       await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport, country);
+      setTripSaved(false);
+      setSheet(travelers.length ? "places" : "trip");
+      setSheetCollapsed(false);
     } catch {
       setRouteError("지역을 찾지 못했어요. 예: 교토, 오사카, 삿포로처럼 입력해 주세요.");
     } finally {
@@ -1742,12 +1755,12 @@ export default function Home() {
   };
 
   const addTraveler = () => {
-    setTravelers((current)=>[...current,{id:`traveler-${Date.now()}`,relation:"구성원",age:""}]);
+    setTravelers((current)=>[...current,{id:`traveler-${Date.now()}`,relation:"",age:""}]);
     setTripSaved(false);
   };
 
   const removeTraveler = (id:string) => {
-    setTravelers((current)=>current.length > 1 ? current.filter((traveler)=>traveler.id!==id) : current);
+    setTravelers((current)=>current.filter((traveler)=>traveler.id!==id));
     setTripSaved(false);
   };
 
@@ -1756,9 +1769,17 @@ export default function Home() {
       setRouteError("여행 종료일은 시작일보다 늦어야 해요.");
       return;
     }
-    const profile:TripProfile = {travelers,startDate:guideStart,endDate:guideEnd};
+    const cleanTravelers = travelers
+      .map((traveler)=>({ ...traveler, relation:traveler.relation.trim(), age:traveler.age.trim() }))
+      .filter((traveler)=>traveler.relation || traveler.age);
+    if (!cleanTravelers.length) {
+      setRouteError("여행 구성원을 한 명 이상 추가해 주세요.");
+      return;
+    }
+    const profile:TripProfile = {travelers:cleanTravelers,startDate:guideStart,endDate:guideEnd};
+    setTravelers(cleanTravelers);
     localStorage.setItem("family-trip-profile",JSON.stringify(profile));
-    void saveTripToCloud({ travelers, guideStart, guideEnd });
+    void saveTripToCloud({ travelers:cleanTravelers, guideStart, guideEnd });
     setAiGuidePlan(null);
     setAiGuideArea("");
     aiGuidePlanRef.current=null;
@@ -1808,7 +1829,15 @@ export default function Home() {
     }
   };
 
-  const authAvailable = hasSupabaseConfig();
+  const authAvailable = authConfigured;
+  const authRequired = !authAvailable || !session?.user;
+  const authChecking = authAvailable && !authReady;
+  const hasConfiguredArea = Boolean(travelArea.trim() && areaPoint);
+  const needsAreaSetup = !authRequired && !hasConfiguredArea;
+  const activeTravelers = travelers.filter((traveler)=>traveler.relation.trim() || traveler.age.trim());
+  const profileSummary = activeTravelers.length
+    ? activeTravelers.map((traveler)=>`${traveler.relation.trim() || "구성원"}${traveler.age.trim() ? ` ${traveler.age.trim()}세` : ""}`).join(" · ")
+    : "구성원을 아직 등록하지 않았어요.";
   const selectedReviewItems: {text:string;rating?:number;author?:string;time?:string}[] = (
     selected.detailedReviews?.length
       ? selected.detailedReviews
@@ -1826,54 +1855,100 @@ export default function Home() {
 
   return (
     <main
-      className={`mobile-app ${authAvailable ? "has-account" : "no-account"}`}
+      className={`mobile-app ${authAvailable ? "has-account" : "no-account"} ${authRequired ? "auth-required" : ""} ${needsAreaSetup ? "needs-area" : ""}`}
       onPointerDown={(event) => {
         const target = event.target as HTMLElement;
-        if (target.closest(".bottom-sheet, .bottom-tabs, .guide-overlay")) return;
+        if (target.closest(".bottom-sheet, .bottom-tabs, .guide-overlay, .area-setup-overlay, .login-overlay")) return;
         setSheetCollapsed(true);
       }}
     >
       <header className="mobile-header">
-        <div><small>우리 가족 {travelArea || "일본"} 여행</small><h1>Guide-trip</h1></div>
+        <div><small>{session?.user ? (hasConfiguredArea ? `${travelArea} 여행` : "여행 지역부터 설정") : "로그인 후 여행 시작"}</small><h1>Guide-trip</h1></div>
         <div className="header-actions">
-          <button className={`round-button ${tripSaved ? "ready" : ""}`} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
-          <button className="round-button" onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
+          <button className={`round-button ${tripSaved ? "ready" : ""}`} disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("trip");setSheetCollapsed(false);}} aria-label="여행 구성 설정"><Users size={20}/></button>
+          <button className="round-button" disabled={authRequired || needsAreaSetup} onClick={() => {setSheet("hotel");setSheetCollapsed(false);}} aria-label="숙소 등록"><Building2 size={20}/></button>
         </div>
       </header>
 
-      {authAvailable && <section className="account-strip">
-        {session?.user ? (
-          <>
-            <span>{session.user.email}</span>
-            <b>{cloudSaving ? "Saving" : "Cloud saved"}</b>
-            <button onClick={signOut}>Sign out</button>
-          </>
-        ) : (
-          <>
-            <input
-              value={authEmail}
-              onChange={(event) => setAuthEmail(event.target.value)}
-              placeholder="Email sign in"
-              type="email"
-            />
-            <button onClick={signInWithEmail}>Send link</button>
-          </>
-        )}
+      {session?.user && <section className="account-strip">
+        <span>{session.user.email}</span>
+        <b>{cloudSaving ? "저장 중" : "클라우드 저장"}</b>
+        <button onClick={signOut}>로그아웃</button>
       </section>}
       {authMessage && <p className="account-message">{authMessage}</p>}
 
       <section className="mobile-map-wrap">
         <div ref={mapEl} className="mobile-map"/>
-        <button className="locate-button" onClick={useCurrentLocation}><LocateFixed size={18}/></button>
+        <button className="locate-button" onClick={useCurrentLocation} disabled={authRequired}><LocateFixed size={18}/></button>
         <div className="map-language"><span>가</span> 한글 지도</div>
       </section>
+
+      {authRequired && (
+        <section className="login-overlay" aria-label="로그인">
+          <div className="login-card">
+            <div className="login-card-head">
+              <Users size={23}/>
+              <div><small>Guide-trip 계정</small><h2>로그인하고 여행을 저장하세요</h2></div>
+            </div>
+            <p>지역, 구성원, 숙소, 저장 장소를 계정 기준으로 불러오고 저장합니다.</p>
+            {!authAvailable ? (
+              <div className="login-config-warning">
+                <b>Supabase 설정이 필요합니다</b>
+                <span>`NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 연결하면 이메일 로그인 기능이 활성화됩니다.</span>
+              </div>
+            ) : authChecking ? (
+              <div className="login-config-warning"><b>세션 확인 중</b><span>저장된 로그인 정보를 확인하고 있어요.</span></div>
+            ) : (
+              <div className="login-form">
+                <input
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  onKeyDown={(event)=>event.key==="Enter"&&void signInWithEmail()}
+                  placeholder="이메일 주소"
+                  type="email"
+                  autoFocus
+                />
+                <button onClick={signInWithEmail} disabled={authLoading || !authEmail.trim()}>
+                  {authLoading ? "전송 중" : "로그인 링크 받기"}
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {needsAreaSetup && (
+        <section className="area-setup-overlay" aria-label="여행 지역 설정">
+          <div className="area-setup-card">
+            <div className="area-setup-head">
+              <MapPin size={22}/>
+              <div><small>첫 설정</small><h2>어디로 떠나세요?</h2></div>
+            </div>
+            <p>지역을 먼저 정하면 해당 지역 기준으로 지도와 추천 장소를 바로 불러옵니다.</p>
+            <div className="area-setup-search">
+              <input
+                value={travelArea}
+                onChange={(event)=>setTravelArea(event.target.value)}
+                onKeyDown={(event)=>event.key==="Enter"&&moveToArea()}
+                placeholder="예: 교토, 오사카, 서울"
+                autoFocus
+              />
+              <button onClick={moveToArea} disabled={!googleReady || areaMoving || !travelArea.trim()}>
+                {areaMoving ? "설정 중" : "지역 설정"}
+              </button>
+            </div>
+            {!googleReady && <small className="area-setup-status">Google 지도를 준비하고 있어요.</small>}
+            {routeError && <p className="route-error">{routeError}</p>}
+          </div>
+        </section>
+      )}
 
       <nav className="bottom-tabs">
         <button className={sheet === "places" ? "active" : ""} onClick={() => {setSheet("places");setSheetCollapsed(false);}}><MapPin size={19}/><span>장소</span></button>
         <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
         <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
         <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
-        <button className={guideOpen ? "active" : ""} onClick={()=>void openAiGuidebook()}><BookOpen size={19}/><span>AI 가이드북</span></button>
+        <button className={guideOpen ? "active" : ""} onClick={()=>needsAreaSetup ? setRouteError("먼저 여행 지역을 설정해 주세요.") : void openAiGuidebook()}><BookOpen size={19}/><span>AI 가이드북</span></button>
       </nav>
 
       <section className={`bottom-sheet ${sheet} ${sheetCollapsed ? "collapsed" : ""} ${placeDetailOpen ? "detail-open" : ""}`}>
@@ -2062,13 +2137,14 @@ export default function Home() {
             <div className="sheet-heading"><div><small>AI 맞춤 추천의 기준</small><h2>여행 구성 설정</h2></div><button className="icon-close" onClick={()=>setSheet("places")}><X size={20}/></button></div>
             <div className="trip-summary">
               <Users size={20}/>
-              <div><b>{travelers.length}명 가족여행</b><small>{tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "여행 날짜를 등록해 주세요"}</small></div>
+              <div><b>{activeTravelers.length ? `${activeTravelers.length}명 여행` : "구성원 미등록"}</b><small>{tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "여행 날짜는 선택 입력입니다"}</small></div>
             </div>
             <div className="trip-dates">
               <label><span>여행 시작일</span><input type="date" value={guideStart} onChange={(e)=>{setGuideStart(e.target.value);setTripSaved(false);}}/></label>
               <label><span>여행 종료일</span><input type="date" min={guideStart || undefined} value={guideEnd} onChange={(e)=>{setGuideEnd(e.target.value);setTripSaved(false);}}/></label>
             </div>
             <div className="traveler-heading"><div><b>여행 구성원</b><small>관계와 나이를 입력하면 AI가 이동 난이도와 장소를 조정해요.</small></div><button onClick={addTraveler}><Plus size={14}/>추가</button></div>
+            {!travelers.length && <p className="empty-travelers">정해진 기본 구성원은 없습니다. 같이 여행할 사람을 직접 추가해 주세요.</p>}
             <div className="traveler-list">
               {travelers.map((traveler,index)=>(
                 <div className="traveler-row" key={traveler.id}>
@@ -2079,7 +2155,7 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <div className="ai-profile-note"><b>AI 반영 예정 정보</b><p>{travelers.map((traveler)=>`${traveler.relation}${traveler.age ? ` ${traveler.age}세` : ""}`).join(" · ")}{tripDays ? ` · ${tripDays.nights}박 ${tripDays.days}일` : ""}</p></div>
+            <div className="ai-profile-note"><b>AI 반영 예정 정보</b><p>{profileSummary}{tripDays ? ` · ${tripDays.nights}박 ${tripDays.days}일` : ""}</p></div>
             <button className="save-trip-button" onClick={saveTripProfile}><Users size={17}/>{tripSaved ? "여행 정보 저장됨" : "여행 정보 저장하기"}</button>
             {routeError && <p className="route-error">{routeError}</p>}
           </>
