@@ -56,7 +56,6 @@ type AiGuidePlan = {
   familyTips:string[]; weatherBackup:string[];
   localTips?:string[]; checklist?:string[]; selfReview?:string[];
 };
-type DevGuideImage = { dataUrl:string; prompt:string; model?:string };
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -543,9 +542,6 @@ export default function Home() {
   const [aiGuideLoading, setAiGuideLoading] = useState(false);
   const [guideSaving, setGuideSaving] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
-  const [guideGeneratedImage, setGuideGeneratedImage] = useState<DevGuideImage | null>(null);
-  const [guideImageLoading, setGuideImageLoading] = useState(false);
-  const [guideImageError, setGuideImageError] = useState("");
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
   const [recommendationError, setRecommendationError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
@@ -579,7 +575,6 @@ export default function Home() {
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const authHeaders = (): Record<string, string> =>
     session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-  const devGuideImageEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_GUIDE_IMAGE === "true";
   const currentTripPayload = () => ({
     hotel,
     savedPlaces,
@@ -1689,37 +1684,6 @@ export default function Home() {
     }
   };
 
-  const generateDevGuideImage = async () => {
-    if (!aiGuidePlan || guideImageLoading) return;
-    setGuideImageLoading(true);
-    setGuideImageError("");
-    try {
-      const response = await fetch("/api/dev-guide-image", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          area:travelArea,
-          title:aiGuidePlan.title,
-          subtitle:aiGuidePlan.subtitle,
-          overview:aiGuidePlan.overview,
-          places:aiGuidePlan.places.slice(0,8).map((place)=>({
-            nameKo:place.nameKo,
-            nameLocal:place.nameLocal,
-            category:place.category,
-            description:place.description,
-          })),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.image?.dataUrl) throw new Error(data.error || "AI 이미지를 만들지 못했어요.");
-      setGuideGeneratedImage(data.image);
-    } catch (error:any) {
-      setGuideImageError(error?.message || "AI 이미지를 만들지 못했어요.");
-    } finally {
-      setGuideImageLoading(false);
-    }
-  };
-
   const searchHotel = async () => {
     if (!hotelQuery.trim()) return;
     setSearching(true);
@@ -1976,8 +1940,6 @@ export default function Home() {
     setAiGuideArea("");
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current="";
-    setGuideGeneratedImage(null);
-    setGuideImageError("");
     setTripSaved(true);
     setRouteError("");
     setSheet("places");
@@ -2016,8 +1978,6 @@ export default function Home() {
       setAiGuideArea(requestedArea);
       aiGuidePlanRef.current=data.guide;
       aiGuideAreaRef.current=requestedArea;
-      setGuideGeneratedImage(null);
-      setGuideImageError("");
     } catch (error:any) {
       setRouteError(error?.message || "AI 가이드북을 만들지 못했어요.");
     } finally {
@@ -2489,7 +2449,6 @@ export default function Home() {
               <label><span>도착</span><input type="date" value={guideEnd} onChange={(e)=>setGuideEnd(e.target.value)}/></label>
             </div>
             <button onClick={downloadGuideImage} disabled={guideSaving}><Download size={17}/>{guideSaving ? "저장 중" : "이미지"}</button>
-            {devGuideImageEnabled && <button onClick={()=>void generateDevGuideImage()} disabled={!aiGuidePlan||guideImageLoading}><Sparkles size={17}/>{guideImageLoading ? "AI 이미지 중" : "AI 이미지"}</button>}
             <button onClick={() => window.print()}><Printer size={17}/>PDF</button>
           </div>
           <div className="guide-scroll">
@@ -2498,7 +2457,6 @@ export default function Home() {
               <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&openAiGuidebook(true)} placeholder="예: 나고야, 교토"/>
               <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "AI 구성 중…" : <><Sparkles size={16}/>AI 가이드 다시 만들기</>}</button>
               {aiGuidePlan && <p>{aiGuidePlan.overview}</p>}
-              {guideImageError && <p className="guide-error">{guideImageError}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
             {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>가이드북 전용 지도를 구성하고 있어요</b><span>설정 지역의 관광지, 맛집, 쇼핑, 카페를 Google 지도 기준으로 다시 모으는 중입니다.</span></div> : aiGuidePlan ? <div className="travel-guide atlas-guide" ref={guideRef}>
@@ -2561,10 +2519,6 @@ export default function Home() {
                         <section><h3>여행 정보</h3><p>화폐 · {travelCountry==="KR"?"대한민국 원(₩)":"일본 엔(¥)"}</p><p>일정 · {tripDays?`${tripDays.nights}박 ${tripDays.days}일`:"당일"}</p><p>구성 · {travelers.map((item)=>item.relation).join(" · ")}</p></section>
                       </aside>
                       <section className="atlas-main-map">
-                        {guideGeneratedImage && <figure className="atlas-ai-cover">
-                          <img src={guideGeneratedImage.dataUrl} alt={`${travelArea} AI 가이드북 커버`}/>
-                          <figcaption>AI guide image preview</figcaption>
-                        </figure>}
                         {staticMapUrl?<img src={staticMapUrl} alt={`${travelArea} 지도`} crossOrigin="anonymous"/>:<div>지도 준비 중</div>}
                         {mapPhotoPins.map(({point,leftPct,topPct})=>
                           <figure key={point.id} className="atlas-map-photo-pin" style={{left:`${leftPct}%`,top:`${topPct}%`}}>
