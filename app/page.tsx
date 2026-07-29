@@ -508,9 +508,10 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [authConfigured, setAuthConfigured] = useState(hasSupabaseConfig());
   const [authReady, setAuthReady] = useState(false);
-  const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
+  const [authMode, setAuthMode] = useState<"signup" | "login">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState("");
   const [authPhone, setAuthPhone] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -568,6 +569,10 @@ export default function Home() {
       setAuthMessage("비밀번호는 6자 이상 입력해 주세요.");
       return;
     }
+    if (authMode === "signup" && password !== authPasswordConfirm.trim()) {
+      setAuthMessage("비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
     setAuthLoading(true);
     try {
       if (authMode === "signup") {
@@ -579,7 +584,13 @@ export default function Home() {
           },
         });
         if (error) {
-          setAuthMessage(error.message);
+          setAuthMessage(error.message.includes("already") ? "이미 가입된 이메일일 수 있어요. 로그인으로 진행해 주세요." : error.message);
+          if (error.message.includes("already")) setAuthMode("login");
+          return;
+        }
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          setAuthMessage("이미 가입된 이메일일 수 있어요. 로그인으로 진행해 주세요.");
+          setAuthMode("login");
           return;
         }
         setAuthMessage(data.session ? "회원가입이 완료됐습니다." : "회원가입이 완료됐습니다. 로그인해 주세요.");
@@ -587,7 +598,16 @@ export default function Home() {
         return;
       }
       const { error } = await supabase.current.auth.signInWithPassword({ email, password });
-      setAuthMessage(error ? error.message : "");
+      if (error) {
+        const message = error.message.includes("Invalid login credentials")
+          ? "이메일 또는 비밀번호가 맞지 않습니다. 회원가입을 아직 안 했다면 아래에서 회원가입해 주세요."
+          : error.message.includes("Email not confirmed")
+            ? "이메일 확인이 필요한 상태입니다. Supabase에서 Confirm email을 끄거나 메일 확인 후 로그인해 주세요."
+            : error.message;
+        setAuthMessage(message);
+      } else {
+        setAuthMessage("");
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -1944,10 +1964,6 @@ export default function Home() {
               <div className="login-config-warning"><b>세션 확인 중</b><span>저장된 로그인 정보를 확인하고 있어요.</span></div>
             ) : (
               <div className="login-form">
-                <div className="login-mode-tabs">
-                  <button type="button" className={authMode === "signup" ? "active" : ""} onClick={()=>{setAuthMode("signup");setAuthMessage("");}}>회원가입</button>
-                  <button type="button" className={authMode === "login" ? "active" : ""} onClick={()=>{setAuthMode("login");setAuthMessage("");}}>로그인</button>
-                </div>
                 <input
                   value={authEmail}
                   onChange={(event) => setAuthEmail(event.target.value)}
@@ -1964,15 +1980,27 @@ export default function Home() {
                   type="password"
                 />
                 {authMode === "signup" && <input
+                  value={authPasswordConfirm}
+                  onChange={(event) => setAuthPasswordConfirm(event.target.value)}
+                  onKeyDown={(event)=>event.key==="Enter"&&void submitAuth()}
+                  placeholder="비밀번호 확인"
+                  type="password"
+                />}
+                {authMode === "signup" && <input
                   value={authPhone}
                   onChange={(event) => setAuthPhone(event.target.value)}
                   onKeyDown={(event)=>event.key==="Enter"&&void submitAuth()}
                   placeholder="휴대폰번호"
                   type="tel"
                 />}
-                <button onClick={submitAuth} disabled={authLoading || !authEmail.trim() || !authPassword.trim() || (authMode === "signup" && !authPhone.trim())}>
+                <button onClick={submitAuth} disabled={authLoading || !authEmail.trim() || !authPassword.trim() || (authMode === "signup" && (!authPasswordConfirm.trim() || !authPhone.trim()))}>
                   {authLoading ? "처리 중" : authMode === "signup" ? "회원가입" : "로그인"}
                 </button>
+                {authMode === "login" ? (
+                  <p className="login-switch">아직 계정이 없나요? <button type="button" onClick={()=>{setAuthMode("signup");setAuthMessage("");}}>회원가입</button></p>
+                ) : (
+                  <p className="login-switch">이미 계정이 있나요? <button type="button" onClick={()=>{setAuthMode("login");setAuthMessage("");}}>로그인</button></p>
+                )}
               </div>
             )}
           </div>
