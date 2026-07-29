@@ -20,6 +20,7 @@ type Point = {
   aiReason?: string; aiPrice?: string; aiFamousItems?: string[]; aiFamilyTip?: string; aiBestTime?: string;
   aiEvidence?: string; googlePriceRange?: string; googlePriceLevel?: string; reviewHighlights?: string[];
   aiRecommendedItems?: {name:string;price:string}[]; aiVisitTip?:string; aiParkingTip?:string;
+  aiInsightTitle?: string; aiDecision?: string; aiEvidenceTags?: string[];
   photoUrl?: string;
   recommendedMenu?: string;
   googlePlaceId?: string; phone?: string; website?: string; openNow?: boolean;
@@ -1130,13 +1131,17 @@ export default function Home() {
       aiRecommendedItems:items.length?items:point.aiRecommendedItems,
       aiFamousItems:items.length?items.map((item:any)=>String(item.name)).slice(0,3):point.aiFamousItems,
       recommendedMenu:items.length?items.map((item:any)=>String(item.name)).join(" · "):point.recommendedMenu,
+      aiInsightTitle:detail?.title || point.aiInsightTitle,
+      aiDecision:detail?.decision || point.aiDecision,
+      aiVisitTip:detail?.visitTip || point.aiVisitTip,
+      aiEvidenceTags:Array.isArray(detail?.evidenceTags)?detail.evidenceTags.slice(0,4):point.aiEvidenceTags,
       detailAiSource:detail?.source || "Google 장소 정보",
       detailAiLoaded:true
     };
   };
   const loadPlaceInsightForPoint = async (point:Point) => {
     const group=guideGroup(point);
-    const cacheKey=`ai-place-detail-v3:${travelCountry}:${point.googlePlaceId}`;
+    const cacheKey=`ai-place-detail-v4:${travelCountry}:${point.googlePlaceId}`;
     try {
       const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
       if (cached?.createdAt>Date.now()-7*24*60*60*1000 && cached.detail) return applyPlaceInsight(point,cached.detail);
@@ -2244,9 +2249,15 @@ export default function Home() {
               <a href={selected.query.startsWith("http") ? selected.query : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.query)}`} target="_blank" rel="noreferrer">구글지도</a>
             </div>
             {selected.aiReason && <div className="ai-place-card">
-              <div className="ai-card-head"><span><Sparkles size={15}/>AI 가족 맞춤 추천</span>{selected.aiBestTime&&<small>{selected.aiBestTime}</small>}</div>
+              <div className="ai-card-head"><span><Sparkles size={15}/>AI 장소 분석</span>{selected.aiBestTime&&<small>{selected.aiBestTime}</small>}</div>
+              <div className="ai-verdict">
+                <small>{guideGroup(selected)} 추천 판단</small>
+                <b>{selected.aiInsightTitle || `${placeDisplayName(selected)}는 이런 여행자에게 좋아요`}</b>
+                <p>{selected.aiDecision || selected.aiReason}</p>
+              </div>
               <p className="ai-summary">{selected.aiReason}</p>
-              {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "대표 메뉴" : guideGroup(selected)==="쇼핑" ? "추천 쇼핑" : "추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
+              {selected.aiEvidenceTags&&selected.aiEvidenceTags.length>0&&<div className="ai-signal-list">{selected.aiEvidenceTags.map((item)=><span key={item}>{item}</span>)}</div>}
+              {selected.aiFamousItems&&selected.aiFamousItems.length>0&&<div className="ai-famous"><b>{guideGroup(selected)==="맛집"||guideGroup(selected)==="카페" ? "AI가 고른 대표 메뉴" : guideGroup(selected)==="쇼핑" ? "AI 추천 쇼핑 포인트" : "AI 추천 포인트"}</b><div>{selected.aiFamousItems.map((item)=><span key={item}>{item}</span>)}</div></div>}
               {!selected.detailAiLoaded&&selectedRecommendedItems.length>0&&<div className="ai-item-list">
                 <b>{["맛집","카페","디저트","이자카야·술집"].includes(guideGroup(selected)) ? "추천 메뉴와 가격" : ["쇼핑","편의점","소품샵","주류","전통시장"].includes(guideGroup(selected)) ? "추천 상품과 가격" : "추천 항목과 가격"}</b>
                 <div>{selectedRecommendedItems.map((item,index)=><p key={`${item.name}-${index}`}><span>{item.name}</span><strong>{item.price}</strong></p>)}</div>
