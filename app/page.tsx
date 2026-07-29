@@ -747,50 +747,13 @@ export default function Home() {
 
   useEffect(()=>{
     if (!placeDetailOpen || !selected.detailLoaded || !selected.googlePlaceId || selected.detailAiLoaded) return;
-    const group=guideGroup(selected);
-    if (!["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"].includes(group)) return;
+    if (!canLoadPlaceInsight(selected)) return;
     let cancelled=false;
-    const applyInsight=(detail:any)=>{
-      if (cancelled) return;
-      const items=Array.isArray(detail?.items)?detail.items:[];
-      const enriched:Point={
-        ...selected,
-        description:detail?.description || selected.description,
-        listSummary:detail?.description || selected.listSummary || selected.description,
-        aiRecommendedItems:items.length?items:selected.aiRecommendedItems,
-        aiFamousItems:items.length?items.map((item:any)=>String(item.name)).slice(0,3):selected.aiFamousItems,
-        recommendedMenu:items.length?items.map((item:any)=>String(item.name)).join(" · "):selected.recommendedMenu,
-        detailAiSource:detail?.source || "Google 장소 정보",
-        detailAiLoaded:true
-      };
-      mergePointEverywhere(enriched);
-    };
     const loadInsight=async()=>{
-      const cacheKey=`ai-place-detail-v3:${travelCountry}:${selected.googlePlaceId}`;
-      try {
-        const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
-        if (cached?.createdAt>Date.now()-7*24*60*60*1000 && cached.detail) {
-          applyInsight(cached.detail);
-          return;
-        }
-      } catch {}
       setPlaceInsightLoading(true);
       try {
-        const response=await fetch("/api/ai-place-detail",{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            name:selected.name,originalName:selected.originalName,type:selected.placeType||group,
-            googleSummary:selected.description,
-            googlePrice:selected.googlePriceRange||selected.googlePriceLevel,
-            country:travelCountry,
-            currency:travelCountry==="KR"?"KRW (₩)":"JPY (¥)",
-            reviews:selected.detailedReviews?.map(review=>review.text)||selected.reviewHighlights||[]
-          })
-        });
-        const data=await response.json();
-        if (!response.ok || !data.detail) throw new Error();
-        try {localStorage.setItem(cacheKey,JSON.stringify({createdAt:Date.now(),detail:data.detail}));} catch {}
-        applyInsight(data.detail);
+        const enriched=await loadPlaceInsightForPoint(selected);
+        if (!cancelled) mergePointEverywhere(enriched);
       } catch {
         if (!cancelled) setSelected(current=>current.id===selected.id?{...current,detailAiLoaded:true}:current);
       } finally {
@@ -1097,6 +1060,46 @@ export default function Home() {
     });
   };
 
+  const placeInsightGroups = ["맛집","카페","디저트","쇼핑","편의점","소품샵","전통시장","주류","이자카야·술집"];
+  const canLoadPlaceInsight = (point:Point) =>
+    Boolean(point.googlePlaceId && point.detailLoaded && !point.detailAiLoaded && placeInsightGroups.includes(guideGroup(point)));
+  const applyPlaceInsight = (point:Point, detail:any):Point => {
+    const items=Array.isArray(detail?.items)?detail.items:[];
+    return {
+      ...point,
+      description:detail?.description || point.description,
+      listSummary:detail?.description || point.listSummary || point.description,
+      aiRecommendedItems:items.length?items:point.aiRecommendedItems,
+      aiFamousItems:items.length?items.map((item:any)=>String(item.name)).slice(0,3):point.aiFamousItems,
+      recommendedMenu:items.length?items.map((item:any)=>String(item.name)).join(" · "):point.recommendedMenu,
+      detailAiSource:detail?.source || "Google 장소 정보",
+      detailAiLoaded:true
+    };
+  };
+  const loadPlaceInsightForPoint = async (point:Point) => {
+    const group=guideGroup(point);
+    const cacheKey=`ai-place-detail-v3:${travelCountry}:${point.googlePlaceId}`;
+    try {
+      const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
+      if (cached?.createdAt>Date.now()-7*24*60*60*1000 && cached.detail) return applyPlaceInsight(point,cached.detail);
+    } catch {}
+    const response=await fetch("/api/ai-place-detail",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        name:point.name,originalName:point.originalName,type:point.placeType||group,
+        googleSummary:point.description,
+        googlePrice:point.googlePriceRange||point.googlePriceLevel,
+        country:travelCountry,
+        currency:travelCountry==="KR"?"KRW (₩)":"JPY (¥)",
+        reviews:point.detailedReviews?.map(review=>review.text)||point.reviewHighlights||[]
+      })
+    });
+    const data=await response.json();
+    if (!response.ok || !data.detail) throw new Error("Could not load place detail.");
+    try {localStorage.setItem(cacheKey,JSON.stringify({createdAt:Date.now(),detail:data.detail}));} catch {}
+    return applyPlaceInsight(point,data.detail);
+  };
+
   const localizePointNames = async (points:Point[]) => {
     const cached = new Map<string,string>();
     points.forEach((point)=>{
@@ -1177,6 +1180,11 @@ export default function Home() {
       }))).flatMap((result)=>result.status==="fulfilled"?[result.value]:[]);
       const localized=await localizePointNames(hydrated);
       localized.forEach(mergePointEverywhere);
+      const insightTargets=localized.filter(canLoadPlaceInsight).slice(0,18);
+      const insightResults=await Promise.allSettled(insightTargets.map(loadPlaceInsightForPoint));
+      insightResults
+        .flatMap((result)=>result.status==="fulfilled"?[result.value]:[])
+        .forEach(mergePointEverywhere);
     } catch {}
   };
 
