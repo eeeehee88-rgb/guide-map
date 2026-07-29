@@ -1,9 +1,12 @@
 [
   {
-    "id": "okinawa-2n3d",
-    "title": "오키나와 2박 3일",
-    "areaAliases": ["오키나와", "okinawa", "沖縄"],
+    "id": "inuyama-2n3d",
+    "title": "이누야마 2박 3일",
+    "areaAliases": ["이누야마", "inuyama", "犬山"],
     "duration": "2박 3일",
-    "pages": ["/ai-guidebooks/okinawa-2n3d/spread.png"]
+    "pages": [
+      "/ai-guidebooks/inuyama-2n3d/page-1-2.png",
+      "/ai-guidebooks/inuyama-2n3d/page-3.png"
+    ]
   }
 ]

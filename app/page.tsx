@@ -1916,7 +1916,10 @@ export default function Home() {
     const guidebooks = await response.json().catch(() => []) as StaticGuidebook[];
     const areaKey = normalizeGuidebookKey(area);
     return guidebooks.find((guidebook) => {
-      const areaMatch = (guidebook.areaAliases || []).some((alias)=>normalizeGuidebookKey(alias)===areaKey);
+      const areaMatch = (guidebook.areaAliases || []).some((alias)=>{
+        const aliasKey = normalizeGuidebookKey(alias);
+        return areaKey===aliasKey || areaKey.includes(aliasKey) || aliasKey.includes(areaKey);
+      });
       const dateMatch = guidebook.startDate && guidebook.endDate
         ? guidebook.startDate===guideStart && guidebook.endDate===guideEnd
         : true;
