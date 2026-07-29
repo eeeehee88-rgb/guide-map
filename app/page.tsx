@@ -452,8 +452,7 @@ function subwayLinesFor(area:string) {
 }
 
 export default function Home() {
-  const authConfigured = hasSupabaseConfig();
-  const supabase = useRef(createBrowserSupabase());
+  const supabase = useRef<ReturnType<typeof createBrowserSupabase>>(null);
   const mapEl = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -507,7 +506,8 @@ export default function Home() {
   const [guideRecommendations, setGuideRecommendations] = useState<Point[]>([]);
   const [recommendationError, setRecommendationError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(!authConfigured);
+  const [authConfigured, setAuthConfigured] = useState(hasSupabaseConfig());
+  const [authReady, setAuthReady] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -576,19 +576,40 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (!supabase.current) {
-      setAuthReady(true);
-      return;
-    }
-    supabase.current.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthReady(true);
-    });
-    const { data } = supabase.current.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setAuthReady(true);
-    });
-    return () => data.subscription.unsubscribe();
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const setupAuth = async () => {
+      try {
+        let client = createBrowserSupabase();
+        if (!client) {
+          const response = await fetch("/api/auth-config", { cache: "no-store" });
+          const config = await response.json().catch(() => null);
+          setAuthConfigured(Boolean(config?.hasConfig));
+          client = config?.hasConfig
+            ? createBrowserSupabase({ url: config.url, publishableKey: config.publishableKey })
+            : null;
+        } else {
+          setAuthConfigured(true);
+        }
+        if (cancelled || !client) return;
+        supabase.current = client;
+        const { data: sessionData } = await client.auth.getSession();
+        if (cancelled) return;
+        setSession(sessionData.session);
+        const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
+          setSession(nextSession);
+          setAuthReady(true);
+        });
+        unsubscribe = () => data.subscription.unsubscribe();
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    };
+    void setupAuth();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {
