@@ -508,7 +508,10 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [authConfigured, setAuthConfigured] = useState(hasSupabaseConfig());
   const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
   const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [cloudSaving, setCloudSaving] = useState(false);
@@ -553,18 +556,38 @@ export default function Home() {
       setCloudSaving(false);
     }
   };
-  const signInWithEmail = async () => {
-    if (!supabase.current || !authEmail.trim()) {
-      setAuthMessage("이메일을 입력하거나 Supabase 환경설정을 먼저 연결해 주세요.");
+  const submitAuth = async () => {
+    const email = authEmail.trim();
+    const password = authPassword.trim();
+    const phone = authPhone.trim();
+    if (!supabase.current || !email || !password || (authMode === "signup" && !phone)) {
+      setAuthMessage(authMode === "signup" ? "이메일, 비밀번호, 휴대폰번호를 입력해 주세요." : "이메일과 비밀번호를 입력해 주세요.");
+      return;
+    }
+    if (password.length < 6) {
+      setAuthMessage("비밀번호는 6자 이상 입력해 주세요.");
       return;
     }
     setAuthLoading(true);
     try {
-      const { error } = await supabase.current.auth.signInWithOtp({
-        email: authEmail.trim(),
-        options: { emailRedirectTo: window.location.origin },
-      });
-      setAuthMessage(error ? error.message : "이메일로 보낸 로그인 링크를 확인해 주세요.");
+      if (authMode === "signup") {
+        const { data, error } = await supabase.current.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { phone },
+          },
+        });
+        if (error) {
+          setAuthMessage(error.message);
+          return;
+        }
+        setAuthMessage(data.session ? "회원가입이 완료됐습니다." : "회원가입이 완료됐습니다. 로그인해 주세요.");
+        if (!data.session) setAuthMode("login");
+        return;
+      }
+      const { error } = await supabase.current.auth.signInWithPassword({ email, password });
+      setAuthMessage(error ? error.message : "");
     } finally {
       setAuthLoading(false);
     }
@@ -1909,7 +1932,7 @@ export default function Home() {
           <div className="login-card">
             <div className="login-card-head">
               <Users size={23}/>
-              <div><small>Guide-trip 계정</small><h2>로그인하고 여행을 저장하세요</h2></div>
+              <div><small>Guide-trip 계정</small><h2>{authMode === "signup" ? "회원가입하고 시작하세요" : "로그인하고 여행을 이어가세요"}</h2></div>
             </div>
             <p>지역, 구성원, 숙소, 저장 장소를 계정 기준으로 불러오고 저장합니다.</p>
             {!authAvailable ? (
@@ -1921,16 +1944,34 @@ export default function Home() {
               <div className="login-config-warning"><b>세션 확인 중</b><span>저장된 로그인 정보를 확인하고 있어요.</span></div>
             ) : (
               <div className="login-form">
+                <div className="login-mode-tabs">
+                  <button type="button" className={authMode === "signup" ? "active" : ""} onClick={()=>{setAuthMode("signup");setAuthMessage("");}}>회원가입</button>
+                  <button type="button" className={authMode === "login" ? "active" : ""} onClick={()=>{setAuthMode("login");setAuthMessage("");}}>로그인</button>
+                </div>
                 <input
                   value={authEmail}
                   onChange={(event) => setAuthEmail(event.target.value)}
-                  onKeyDown={(event)=>event.key==="Enter"&&void signInWithEmail()}
+                  onKeyDown={(event)=>event.key==="Enter"&&void submitAuth()}
                   placeholder="이메일 주소"
                   type="email"
                   autoFocus
                 />
-                <button onClick={signInWithEmail} disabled={authLoading || !authEmail.trim()}>
-                  {authLoading ? "전송 중" : "로그인 링크 받기"}
+                <input
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  onKeyDown={(event)=>event.key==="Enter"&&void submitAuth()}
+                  placeholder="비밀번호"
+                  type="password"
+                />
+                {authMode === "signup" && <input
+                  value={authPhone}
+                  onChange={(event) => setAuthPhone(event.target.value)}
+                  onKeyDown={(event)=>event.key==="Enter"&&void submitAuth()}
+                  placeholder="휴대폰번호"
+                  type="tel"
+                />}
+                <button onClick={submitAuth} disabled={authLoading || !authEmail.trim() || !authPassword.trim() || (authMode === "signup" && !authPhone.trim())}>
+                  {authLoading ? "처리 중" : authMode === "signup" ? "회원가입" : "로그인"}
                 </button>
               </div>
             )}

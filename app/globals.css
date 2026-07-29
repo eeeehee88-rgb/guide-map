@@ -493,7 +493,7 @@ body:has(.place-detail-overlay){overflow:hidden}
 .login-card{width:min(100%,420px);padding:22px;border:1px solid rgba(190,201,196,.8);border-radius:18px;background:#fff;box-shadow:0 16px 40px rgba(0,32,26,.13)}
 .login-card-head{display:flex;align-items:center;gap:11px}.login-card-head svg{color:var(--green)}.login-card-head small,.login-card-head h2{display:block;margin:0}.login-card-head small{color:#6f7975;font-size:11px;font-weight:800}.login-card-head h2{font-size:23px;line-height:29px;letter-spacing:-.02em}
 .login-card>p{margin:12px 0 16px;color:#53605a;font-size:14px;line-height:20px}
-.login-form{display:grid;grid-template-columns:minmax(0,1fr) 124px;gap:8px}.login-form input{height:50px;padding:0 13px;border-color:var(--line);border-radius:12px;font-size:16px;font-weight:700}.login-form button{height:50px;border:0;border-radius:12px;background:var(--green);color:#fff;font-size:13px;font-weight:900}
+.login-form{display:grid;grid-template-columns:1fr;gap:9px}.login-form input{height:50px;padding:0 13px;border-color:var(--line);border-radius:12px;font-size:16px;font-weight:700}.login-form>button{height:50px;border:0;border-radius:12px;background:var(--green);color:#fff;font-size:13px;font-weight:900}.login-mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border:1px solid var(--line);border-radius:999px;background:#fbfaf7}.login-mode-tabs button{height:38px;border:0;border-radius:999px;background:transparent;color:#6f7975;font-size:13px;font-weight:900}.login-mode-tabs button.active{background:var(--green);color:#fff}
 .login-config-warning{display:grid;gap:6px;padding:14px;border:1px dashed #d8c08b;border-radius:12px;background:#fffaf2;color:#765513}.login-config-warning b{font-size:13px}.login-config-warning span{font-size:12px;line-height:18px}
 .area-setup-overlay{position:absolute;z-index:920;inset:134px 0 0;display:grid;place-items:center;padding:18px;background:linear-gradient(180deg,rgba(240,252,244,.88),rgba(245,242,235,.98))}
 .area-setup-card{width:min(100%,420px);padding:22px;border:1px solid rgba(190,201,196,.8);border-radius:18px;background:#fff;box-shadow:0 16px 40px rgba(0,32,26,.13)}
@@ -506,7 +506,6 @@ body:has(.place-detail-overlay){overflow:hidden}
 @media(max-width:380px){
   .login-overlay{padding:14px}
   .login-card{padding:18px}
-  .login-form{grid-template-columns:1fr}
   .login-form button{width:100%}
   .area-setup-overlay{padding:14px}
   .area-setup-card{padding:18px}
