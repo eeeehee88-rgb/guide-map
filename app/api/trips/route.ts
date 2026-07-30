@@ -8,6 +8,7 @@ type TripPayload = {
   travelers?: unknown[];
   travelArea?: string;
   travelCountry?: string;
+  areaPoint?: unknown;
 };
 
 function cleanTrip(input: TripPayload) {
@@ -19,6 +20,7 @@ function cleanTrip(input: TripPayload) {
     travelers: Array.isArray(input.travelers) ? input.travelers.slice(0, 30) : [],
     travelArea: String(input.travelArea ?? "").slice(0, 120),
     travelCountry: String(input.travelCountry ?? "").slice(0, 8),
+    areaPoint: input.areaPoint ?? null,
   };
 }
 

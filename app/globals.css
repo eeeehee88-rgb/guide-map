@@ -3233,14 +3233,14 @@ button{
   align-items:flex-start!important;
   justify-content:center!important;
   width:calc(100% + 32px)!important;
-  height:28px!important;
-  min-height:28px!important;
-  margin:-7px -16px 10px!important;
-  padding:7px 0 0!important;
+  height:40px!important;
+  min-height:40px!important;
+  margin:0 -16px 12px!important;
+  padding:13px 0 0!important;
   border:0!important;
   border-radius:24px 24px 0 0!important;
-  background:linear-gradient(180deg,#fffdf8 0%,#fffdf8 68%,rgba(255,253,248,.9) 100%)!important;
-  box-shadow:none!important;
+  background:#fffdf8!important;
+  box-shadow:0 10px 16px rgba(255,253,248,.96)!important;
 }
 
 .bottom-sheet .sheet-toggle .sheet-handle{
@@ -3249,6 +3249,15 @@ button{
   margin:0 auto!important;
   border-radius:999px!important;
   background:#d8d0c3!important;
+}
+
+.bottom-sheet{
+  padding-top:0!important;
+}
+
+.bottom-sheet.collapsed .sheet-toggle{
+  margin-bottom:0!important;
+  box-shadow:none!important;
 }
 
 .recommendation-list>button{

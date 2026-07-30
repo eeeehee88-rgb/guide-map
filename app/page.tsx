@@ -62,6 +62,8 @@ type GuidebookJob = {
   id:string; status:"pending"|"ready"|"failed"; area:string; startDate:string; endDate:string; duration:string;
   title:string; pages:string[]; error?:string; requestedAt:string; updatedAt:string;
 };
+type StoredAreaPoint = { area:string; country?:TravelCountry; point:Point };
+const AREA_POINT_STORAGE_KEY = "travel-search-area-point";
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -568,6 +570,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [cloudSaving, setCloudSaving] = useState(false);
+  const [cloudTripLoaded, setCloudTripLoaded] = useState(false);
   const [areaPoint, setAreaPoint] = useState<Point | null>(null);
   const [areaBounds, setAreaBounds] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Point | null>(null);
@@ -587,6 +590,38 @@ export default function Home() {
   const pointById = (id: string) => allPoints.find((p) => p.id === id) || areaPoint || station;
   const authHeaders = (): Record<string, string> =>
     session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  const normalizeStoredAreaPoint = (value:unknown, fallbackArea = ""): Point | null => {
+    const raw = value as Partial<Point> | null;
+    if (!raw || typeof raw.lat !== "number" || typeof raw.lng !== "number") return null;
+    const areaName = fallbackArea || String(raw.name || travelArea || "여행 지역").replace(/\s*중심$/,"");
+    return {
+      id:"area-center",
+      name:String(raw.name || `${areaName} 중심`),
+      sub:String(raw.sub || `${areaName} 여행 기준 위치`),
+      category:"검색",
+      lat:raw.lat,
+      lng:raw.lng,
+      color:String(raw.color || "#174da4"),
+      hours:String(raw.hours || ""),
+      description:String(raw.description || `${areaName} 지역 길찾기의 기본 출발점입니다.`),
+      tip:String(raw.tip || ""),
+      query:String(raw.query || areaName)
+    };
+  };
+  const readStoredAreaPoint = (expectedArea = ""): StoredAreaPoint | null => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(AREA_POINT_STORAGE_KEY) || "null") as StoredAreaPoint | null;
+      if (!stored?.point) return null;
+      if (expectedArea && stored.area && stored.area !== expectedArea) return null;
+      const point = normalizeStoredAreaPoint(stored.point, stored.area || expectedArea);
+      return point ? { area:stored.area || expectedArea, country:stored.country, point } : null;
+    } catch {
+      return null;
+    }
+  };
+  const rememberAreaPoint = (area:string, country:TravelCountry, point:Point) => {
+    localStorage.setItem(AREA_POINT_STORAGE_KEY, JSON.stringify({ area, country, point }));
+  };
   const currentTripPayload = () => ({
     hotel,
     savedPlaces,
@@ -595,6 +630,7 @@ export default function Home() {
     travelers,
     travelArea,
     travelCountry,
+    areaPoint,
   });
   const saveTripToCloud = async (override?: Partial<ReturnType<typeof currentTripPayload>>) => {
     if (!session) return;
@@ -733,7 +769,11 @@ export default function Home() {
   }, [authMessage, session]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      setCloudTripLoaded(true);
+      return;
+    }
+    setCloudTripLoaded(false);
     let cancelled = false;
     window.setTimeout(() => {
       fetch("/api/trips", { headers: authHeaders(), cache: "no-store" })
@@ -745,21 +785,34 @@ export default function Home() {
           if (data.trip.guideStart) setGuideStart(data.trip.guideStart);
           if (data.trip.guideEnd) setGuideEnd(data.trip.guideEnd);
           if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
+          const cloudArea = String(data.trip.travelArea || "");
           const localArea = localStorage.getItem("travel-search-area") || "";
-          const nextArea = localArea || data.trip.travelArea || "";
+          const nextArea = cloudArea || localArea;
           if (nextArea) {
             setTravelArea(nextArea);
             setAreaInput(nextArea);
             setAreaSetupCompleted(true);
             localStorage.setItem("travel-area-setup-completed","true");
+            localStorage.setItem("travel-search-area", nextArea);
             setSheet("places");
             setSheetCollapsed(false);
-            if (localArea && localArea !== data.trip.travelArea) void saveTripToCloud({ travelArea: localArea });
+            const cloudCountry = data.trip.travelCountry === "KR" || data.trip.travelCountry === "JP" ? data.trip.travelCountry : undefined;
+            const nextAreaPoint = normalizeStoredAreaPoint(data.trip.areaPoint, nextArea) || readStoredAreaPoint(nextArea)?.point;
+            if (nextAreaPoint) {
+              setAreaPoint(nextAreaPoint);
+              setSelected(nextAreaPoint);
+              setOriginId("area-center");
+              if (cloudCountry) rememberAreaPoint(nextArea, cloudCountry, nextAreaPoint);
+            }
+            if (!cloudArea && localArea) void saveTripToCloud({ travelArea: localArea });
           }
           if (data.trip.travelCountry === "KR" || data.trip.travelCountry === "JP") setTravelCountry(data.trip.travelCountry);
           setTripSaved(true);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setCloudTripLoaded(true);
+        });
     }, 0);
     return () => {
       cancelled = true;
@@ -930,6 +983,12 @@ export default function Home() {
       setAreaInput(savedArea);
       setAreaSetupCompleted(true);
       localStorage.setItem("travel-area-setup-completed","true");
+      const storedPoint = readStoredAreaPoint(savedArea);
+      if (storedPoint?.point) {
+        setAreaPoint(storedPoint.point);
+        setSelected(storedPoint.point);
+        setOriginId("area-center");
+      }
       setSheet("places");
     }
     else setSheet("search");
@@ -981,10 +1040,14 @@ export default function Home() {
 
   useEffect(() => {
     const google = (window as any).google;
-    if (!googleReady || !mapEl.current || !google?.maps) return;
+    if (!googleReady || !cloudTripLoaded || !mapEl.current || !google?.maps) return;
+    if (travelArea.trim() && !areaPoint && !isInuyamaArea) return;
     if (!mapRef.current) {
+      const initialCenter = areaPoint
+        ? { lat:areaPoint.lat, lng:areaPoint.lng }
+        : { lat:35.3845, lng:136.9417 };
       mapRef.current = new google.maps.Map(mapEl.current, {
-        center:{ lat:35.3845, lng:136.9417 },
+        center:initialCenter,
         zoom:15,
         mapTypeControl:false,
         streetViewControl:false,
@@ -1071,7 +1134,7 @@ export default function Home() {
       });
       markerLayerRef.current.push(marker);
     });
-  }, [googleReady, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea, travelCountry, routeSearchPoints]);
+  }, [googleReady, cloudTripLoaded, category, selected.id, hotel, placeResults, savedPlaces, guideRecommendations, areaPoint, currentLocation, travelArea, travelCountry, routeSearchPoints]);
 
   const chooseHotel = (result: SearchResult) => {
     const next = {
@@ -1428,6 +1491,8 @@ export default function Home() {
       setSelected(nextAreaPoint);
       setOriginId("area-center");
       localStorage.setItem("travel-search-area", guideArea);
+      rememberAreaPoint(guideArea, activeCountry, nextAreaPoint);
+      void saveTripToCloud({ travelArea:guideArea, travelCountry:activeCountry, areaPoint:nextAreaPoint });
       try {
         const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry, guideArea)) || "null");
         if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
@@ -1685,12 +1750,12 @@ export default function Home() {
   };
 
   useEffect(()=>{
-    if (!googleReady || initialGuideLoadedRef.current || guideLoading || guideRecommendations.length || !travelArea.trim()) return;
+    if (!googleReady || !cloudTripLoaded || initialGuideLoadedRef.current || guideLoading || guideRecommendations.length || !travelArea.trim()) return;
     initialGuideLoadedRef.current=true;
     setSheet("places");
     setSheetCollapsed(false);
     void buildAreaGuide();
-  },[googleReady, travelArea, guideLoading, guideRecommendations.length]);
+  },[googleReady, cloudTripLoaded, travelArea, guideLoading, guideRecommendations.length]);
 
 
   const guidebookDownloadName = (index:number, pageUrl:string) => {
