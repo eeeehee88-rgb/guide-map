@@ -1923,7 +1923,7 @@ export default function Home() {
       const dateMatch = guidebook.startDate && guidebook.endDate
         ? guidebook.startDate===guideStart && guidebook.endDate===guideEnd
         : true;
-      const durationMatch = guidebook.duration ? guidebook.duration===tripDurationText : true;
+      const durationMatch = guidebook.duration ? !tripDurationText || guidebook.duration===tripDurationText : true;
       return areaMatch && dateMatch && durationMatch && guidebook.pages?.length;
     }) || null;
   };
