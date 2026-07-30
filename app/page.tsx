@@ -59,6 +59,7 @@ type AiGuidePlan = {
 type StaticGuidebook = {
   id:string; title:string; areaAliases?:string[]; duration?:string; startDate?:string; endDate?:string; pages:string[];
 };
+const LOCAL_CODEX_ORIGIN = "http://127.0.0.1:8789";
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -869,6 +870,24 @@ export default function Home() {
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
 
+  const fetchLocalCodex = async (path:string, init?:RequestInit) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 3500);
+    try {
+      const response = await fetch(`${LOCAL_CODEX_ORIGIN}${path}`, {
+        ...init,
+        cache:"no-store",
+        signal:controller.signal,
+      });
+      if (!response.ok && response.status !== 202) return null;
+      return await response.json();
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
   const updateCurrentLocation = (centerMap:boolean, showError:boolean) => {
     if (!navigator.geolocation) {
       if (showError) setRouteError("이 기기에서는 현재 위치를 사용할 수 없어요.");
@@ -1347,7 +1366,7 @@ export default function Home() {
       setAreaSetupCompleted(true);
       void saveTripToCloud({ travelArea: travelArea.trim(), travelCountry: country });
       setPlaceResults([]);
-      setGuideRecommendations(spots);
+      setGuideRecommendations([]);
       setAiGuidePlan(null);
       setAiGuideArea("");
       aiGuidePlanRef.current=null;
@@ -1355,6 +1374,7 @@ export default function Home() {
       setStaticGuidebook(null);
       setCategory("전체");
       setAiOverview("Codex CLI로 준비한 개발용 추천 데이터를 표시하고 있어요.");
+      void buildAreaGuide();
       setTripSaved(false);
       setSheet(travelers.length ? "places" : "trip");
       setSheetCollapsed(false);
@@ -1365,6 +1385,53 @@ export default function Home() {
     }
   };
 
+  const loadLocalCodexRecommendations = async () => {
+    const requestedArea = travelArea.trim();
+    if (!requestedArea) return null;
+    const payload = {
+      area:requestedArea,
+      country:travelCountry,
+      startDate:guideStart,
+      endDate:guideEnd,
+      duration:tripDurationText,
+      travelers:travelers.map(({relation,age})=>({relation,age})),
+      hotel
+    };
+    const data = await fetchLocalCodex("/recommendations", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    if (!data) return null;
+    if (Array.isArray(data.recommendations) && data.recommendations.length) {
+      const points = data.recommendations
+        .filter((point:any)=>point?.name && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)))
+        .slice(0,80)
+        .map((point:any,index:number)=>({
+          ...point,
+          id:String(point.id || `local-codex-${index}`),
+          name:String(point.name),
+          sub:String(point.sub || `${requestedArea} 추천 장소`),
+          category:(point.category || "검색") as Point["category"],
+          lat:Number(point.lat),
+          lng:Number(point.lng),
+          color:String(point.color || pointColor(point)),
+          hours:String(point.hours || ""),
+          description:String(point.description || point.listSummary || `${requestedArea} 로컬 Codex 추천 장소입니다.`),
+          listSummary:String(point.listSummary || point.description || `${requestedArea} 로컬 Codex 추천 장소입니다.`),
+          tip:String(point.tip || point.aiFamilyTip || "방문 전 최신 정보를 확인해 주세요."),
+          query:String(point.query || point.name),
+          placeType:String(point.placeType || point.category || "추천"),
+          aiReason:String(point.aiReason || point.reason || point.tip || `${requestedArea} 여행 동선에 맞춘 로컬 Codex 추천입니다.`),
+          aiFamilyTip:String(point.aiFamilyTip || point.tip || "가족 구성원 컨디션에 맞춰 방문 시간을 조정해 주세요."),
+          aiVisitTip:String(point.aiVisitTip || point.hours || "운영시간은 방문 전 확인해 주세요."),
+          aiParkingTip:String(point.aiParkingTip || "주차와 접근성은 이동 전에 확인해 주세요.")
+        })) as Point[];
+      return { overview:String(data.overview || "로컬 Codex 서버가 만든 추천 리스트예요."), points };
+    }
+    return { overview:String(data.overview || "로컬 Codex 서버에 추천 생성 요청을 남겼어요."), points:[] as Point[], queued:data.status==="queued" };
+  };
+
   const buildAreaGuide = async () => {
     if (!travelArea.trim()) return [] as Point[];
     setGuideLoading(true);
@@ -1372,6 +1439,18 @@ export default function Home() {
     setPlaceResults([]);
     setCategory("전체");
     setRouteError("");
+    const localCodex = await loadLocalCodexRecommendations();
+    if (localCodex?.points.length) {
+      setAiOverview(localCodex.overview);
+      setGuideRecommendations(localCodex.points);
+      setDestinationId((current)=>current==="area-center" && localCodex.points[0] ? localCodex.points[0].id : current);
+      setGuideLoading(false);
+      return localCodex.points;
+    }
+    if (localCodex?.queued) {
+      setAiOverview(localCodex.overview);
+      setRecommendationError(localCodex.overview);
+    }
     const codexRecommendations = spots.map((point)=>({
       ...point,
       listSummary:point.listSummary || point.description,
@@ -1392,8 +1471,7 @@ export default function Home() {
     initialGuideLoadedRef.current=true;
     setSheet("places");
     setSheetCollapsed(false);
-    setAiOverview("Codex CLI로 준비한 개발용 추천 데이터를 표시하고 있어요.");
-    setGuideRecommendations(spots);
+    void buildAreaGuide();
   },[travelArea, guideRecommendations.length]);
 
   const downloadGuideImage = async () => {
@@ -1645,6 +1723,26 @@ export default function Home() {
   })();
   const tripDurationText = tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "";
   const normalizeGuidebookKey = (value:string) => value.toLowerCase().replace(/\s+/g,"").trim();
+  const requestLocalCodexGuidebook = async (area:string) => {
+    const params = new URLSearchParams({
+      area,
+      startDate:guideStart,
+      endDate:guideEnd,
+      duration:tripDurationText
+    });
+    const data = await fetchLocalCodex(`/guidebooks?${params.toString()}`);
+    if (!data) return null;
+    if (data.guidebook?.pages?.length) return {
+      status:"ready",
+      guidebook:data.guidebook as StaticGuidebook,
+      message:String(data.message || "")
+    };
+    return {
+      status:String(data.status || "queued"),
+      guidebook:null,
+      message:String(data.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.")
+    };
+  };
   const loadStaticGuidebook = async (area:string) => {
     const response = await fetch("/ai-guidebooks/index.json", { cache:"no-store" });
     if (!response.ok) return null;
@@ -1726,6 +1824,21 @@ export default function Home() {
     setAiGuideArea(requestedArea);
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current=requestedArea;
+    const localGuidebook = await requestLocalCodexGuidebook(requestedArea);
+    if (localGuidebook?.guidebook) {
+      setStaticGuidebook(localGuidebook.guidebook);
+      setAiGuidePlan(null);
+      setAiGuideArea(requestedArea);
+      setAiGuideLoading(false);
+      setRouteError("");
+      return;
+    }
+    if (localGuidebook?.status==="queued") {
+      setStaticGuidebook(null);
+      setRouteError(localGuidebook.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.");
+      setAiGuideLoading(false);
+      return;
+    }
     const staticMatch = await loadStaticGuidebook(requestedArea);
     if (staticMatch) {
       setStaticGuidebook(staticMatch);
