@@ -3226,8 +3226,8 @@ button{
 }
 
 .bottom-sheet .sheet-toggle{
-  position:sticky!important;
-  top:0!important;
+  position:relative!important;
+  top:auto!important;
   z-index:12!important;
   display:flex!important;
   align-items:flex-start!important;
@@ -3256,8 +3256,22 @@ button{
 }
 
 .bottom-sheet.collapsed .sheet-toggle{
-  margin-bottom:0!important;
+  display:none!important;
+}
+
+.bottom-sheet.collapsed{
+  max-height:0!important;
+  min-height:0!important;
+  height:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
   box-shadow:none!important;
+  pointer-events:none!important;
+}
+
+.bottom-sheet.collapsed::before{
+  display:none!important;
 }
 
 .recommendation-list>button{
