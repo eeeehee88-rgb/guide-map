@@ -3229,14 +3229,26 @@ button{
   position:sticky!important;
   top:0!important;
   z-index:12!important;
-  width:66px!important;
-  height:16px!important;
-  min-height:16px!important;
-  margin:-28px auto 6px!important;
-  padding:0!important;
-  border-radius:999px!important;
-  background:transparent!important;
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  width:calc(100% + 32px)!important;
+  height:28px!important;
+  min-height:28px!important;
+  margin:-7px -16px 10px!important;
+  padding:7px 0 0!important;
+  border:0!important;
+  border-radius:24px 24px 0 0!important;
+  background:linear-gradient(180deg,#fffdf8 0%,#fffdf8 68%,rgba(255,253,248,.9) 100%)!important;
   box-shadow:none!important;
+}
+
+.bottom-sheet .sheet-toggle .sheet-handle{
+  width:42px!important;
+  height:4px!important;
+  margin:0 auto!important;
+  border-radius:999px!important;
+  background:#d8d0c3!important;
 }
 
 .recommendation-list>button{
