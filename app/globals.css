@@ -3000,6 +3000,28 @@ button{
   text-align:right;
 }
 
+.place-detail-popup .ai-item-list p{
+  display:grid!important;
+  grid-template-columns:1fr;
+  gap:4px;
+}
+
+.place-detail-popup .ai-item-list p span{
+  min-width:0;
+  overflow-wrap:anywhere;
+  line-height:1.45;
+}
+
+.place-detail-popup .ai-item-list p strong{
+  justify-self:start;
+  max-width:100%;
+  padding:3px 7px;
+  border-radius:999px;
+  background:#fff7e8;
+  text-align:left;
+  white-space:normal;
+}
+
 .place-detail-popup .ai-tip-grid{
   margin-top:14px;
 }
