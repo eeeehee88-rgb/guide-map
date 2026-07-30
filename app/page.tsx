@@ -530,6 +530,9 @@ export default function Home() {
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
   const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
   const [travelArea, setTravelArea] = useState("");
+  const [areaSetupCompleted, setAreaSetupCompleted] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("travel-area-setup-completed") === "true"
+  );
   const [travelCountry, setTravelCountry] = useState<TravelCountry>("JP");
   const [areaMoving, setAreaMoving] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -733,6 +736,8 @@ export default function Home() {
           if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
           if (data.trip.travelArea) {
             setTravelArea(data.trip.travelArea);
+            setAreaSetupCompleted(true);
+            localStorage.setItem("travel-area-setup-completed","true");
             setSheet("places");
             setSheetCollapsed(false);
           }
@@ -907,6 +912,8 @@ export default function Home() {
     const savedArea = localStorage.getItem("travel-search-area");
     if (savedArea) {
       setTravelArea(savedArea);
+      setAreaSetupCompleted(true);
+      localStorage.setItem("travel-area-setup-completed","true");
       setSheet("places");
     }
     else setSheet("search");
@@ -1336,12 +1343,16 @@ export default function Home() {
       mapRef.current?.setZoom(13);
       setAreaBounds(areaResults[0].geometry.viewport);
       localStorage.setItem("travel-search-area", travelArea.trim());
+      localStorage.setItem("travel-area-setup-completed","true");
+      setAreaSetupCompleted(true);
+      void saveTripToCloud({ travelArea: travelArea.trim(), travelCountry: country });
       setPlaceResults([]);
       setGuideRecommendations(spots);
       setAiGuidePlan(null);
       setAiGuideArea("");
       aiGuidePlanRef.current=null;
       aiGuideAreaRef.current="";
+      setStaticGuidebook(null);
       setCategory("전체");
       setAiOverview("Codex CLI로 준비한 개발용 추천 데이터를 표시하고 있어요.");
       setTripSaved(false);
@@ -1650,7 +1661,7 @@ export default function Home() {
       const durationMatch = guidebook.duration ? !tripDurationText || guidebook.duration===tripDurationText : true;
       return areaMatch && dateMatch && durationMatch && guidebook.pages?.length;
     });
-    return matchedGuidebook || guidebooks.find((guidebook)=>guidebook.pages?.length) || null;
+    return matchedGuidebook || null;
   };
 
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
@@ -1699,6 +1710,16 @@ export default function Home() {
   const openAiGuidebook = async (force=false) => {
     setGuideOpen(true);
     const requestedArea=travelArea.trim();
+    if (!requestedArea) {
+      setStaticGuidebook(null);
+      setAiGuidePlan(null);
+      setAiGuideArea("");
+      aiGuidePlanRef.current=null;
+      aiGuideAreaRef.current="";
+      setRouteError("이미지 가이드북을 볼 지역을 먼저 입력해 주세요.");
+      setAiGuideLoading(false);
+      return;
+    }
     setAiGuideLoading(true);
     setRouteError("");
     setAiGuidePlan(null);
@@ -1720,11 +1741,20 @@ export default function Home() {
     return;
   };
 
+  useEffect(()=>{
+    const requestedArea = travelArea.trim();
+    if (!guideOpen || !requestedArea || aiGuideArea===requestedArea) return;
+    const timer = window.setTimeout(() => {
+      void openAiGuidebook(true);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  },[guideOpen,travelArea,aiGuideArea]);
+
   const authAvailable = authConfigured;
   const authRequired = !authAvailable || !session?.user;
   const authChecking = authAvailable && !authReady;
   const hasConfiguredArea = Boolean(travelArea.trim());
-  const needsAreaSetup = !authRequired && !hasConfiguredArea;
+  const needsAreaSetup = !authRequired && !areaSetupCompleted;
   const activeTravelers = travelers.filter((traveler)=>traveler.relation.trim() || traveler.age.trim());
   const profileSummary = activeTravelers.length
     ? activeTravelers.map((traveler)=>`${traveler.relation.trim() || "구성원"}${traveler.age.trim() ? ` ${traveler.age.trim()}세` : ""}`).join(" · ")
