@@ -1915,7 +1915,7 @@ export default function Home() {
     if (!response.ok) return null;
     const guidebooks = await response.json().catch(() => []) as StaticGuidebook[];
     const areaKey = normalizeGuidebookKey(area);
-    return guidebooks.find((guidebook) => {
+    const matchedGuidebook = guidebooks.find((guidebook) => {
       const areaMatch = (guidebook.areaAliases || []).some((alias)=>{
         const aliasKey = normalizeGuidebookKey(alias);
         return areaKey===aliasKey || areaKey.includes(aliasKey) || aliasKey.includes(areaKey);
@@ -1925,7 +1925,8 @@ export default function Home() {
         : true;
       const durationMatch = guidebook.duration ? !tripDurationText || guidebook.duration===tripDurationText : true;
       return areaMatch && dateMatch && durationMatch && guidebook.pages?.length;
-    }) || null;
+    });
+    return matchedGuidebook || guidebooks.find((guidebook)=>guidebook.pages?.length) || null;
   };
 
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
