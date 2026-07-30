@@ -1,4 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
+import { existsSync, readFileSync } from "node:fs";
+
+function loadDotEnv() {
+  if (!existsSync(".env")) return;
+  const lines = readFileSync(".env", "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator === -1) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotEnv();
 
 export function createAdminSupabase() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;

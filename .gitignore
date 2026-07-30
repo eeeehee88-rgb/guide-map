@@ -1,4 +1,6 @@
 /dist/
+.env
+서비스룰.txt
 .vinext/
 .wrangler/
 node_modules/
