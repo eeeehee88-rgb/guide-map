@@ -3195,13 +3195,14 @@ button{
   position:sticky!important;
   top:0!important;
   z-index:12!important;
-  width:calc(100% + 32px)!important;
-  height:28px!important;
-  min-height:28px!important;
-  margin:-28px -16px 10px!important;
-  border-radius:24px 24px 0 0!important;
-  background:#fffdf8!important;
-  box-shadow:0 8px 14px rgba(255,253,248,.94)!important;
+  width:72px!important;
+  height:18px!important;
+  min-height:18px!important;
+  margin:-22px auto 10px!important;
+  padding:0!important;
+  border-radius:999px!important;
+  background:transparent!important;
+  box-shadow:none!important;
 }
 
 .recommendation-list>button{
