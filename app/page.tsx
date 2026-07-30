@@ -6,7 +6,6 @@ import {
   BookOpen, Building2, Bus, CalendarDays, Car, Clock3, Download, Footprints, LocateFixed,
   Heart, LogOut, MapPin, Navigation, Plus, Printer, Search, Sparkles, TrainFront, Trash2, Users, X
 } from "lucide-react";
-import { toJpeg } from "html-to-image";
 import type { Session } from "@supabase/supabase-js";
 import { createBrowserSupabase, hasSupabaseConfig } from "./lib/supabase-client";
 
@@ -1694,31 +1693,61 @@ export default function Home() {
   },[googleReady, travelArea, guideLoading, guideRecommendations.length]);
 
 
-  const downloadGuideImage = async () => {
-    const node = guideRef.current;
-    if (!node) return;
-    setGuideSaving(true);
-    const previousTransform = node.style.transform;
-    const previousMarginBottom = node.style.marginBottom;
+  const guidebookDownloadName = (index:number, pageUrl:string) => {
+    const safeArea = (travelArea || staticGuidebook?.title || "ai-guidebook").replace(/[\\/:*?"<>|]/g, "-").trim() || "ai-guidebook";
+    const extension = pageUrl.split("?")[0].split(".").pop()?.toLowerCase();
+    const imageExtension = extension && ["jpg","jpeg","png","webp"].includes(extension) ? extension : "png";
+    return `${safeArea}-ai-guidebook-page-${index+1}.${imageExtension}`;
+  };
+
+  const downloadGuidebookPage = async (pageUrl:string, index:number, keepSavingState = false) => {
+    if (!keepSavingState) setGuideSaving(true);
     try {
-      node.style.transform = "none";
-      node.style.marginBottom = "0";
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const rect = node.getBoundingClientRect();
-      const dataUrl = await toJpeg(node, {
-        quality:.96, pixelRatio:2, backgroundColor:"#ffffff",
-        width:Math.ceil(rect.width), height:Math.ceil(rect.height),
-        style:{ transform:"none", margin:"0" }
-      });
+      const response = await fetch(pageUrl);
+      if (!response.ok) throw new Error("download failed");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.download = `${travelArea || "일본"}-가족여행-가이드.jpg`;
-      link.href = dataUrl;
+      link.href = objectUrl;
+      link.download = guidebookDownloadName(index, pageUrl);
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      const link = document.createElement("a");
+      link.href = pageUrl;
+      link.download = guidebookDownloadName(index, pageUrl);
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } finally {
-      node.style.transform = previousTransform;
-      node.style.marginBottom = previousMarginBottom;
+      if (!keepSavingState) setGuideSaving(false);
+    }
+  };
+
+  const downloadGuidebookImages = async () => {
+    if (!staticGuidebook?.pages.length) return;
+    setGuideSaving(true);
+    try {
+      for (let index = 0; index < staticGuidebook.pages.length; index += 1) {
+        await downloadGuidebookPage(staticGuidebook.pages[index], index, true);
+        await new Promise((resolve) => setTimeout(resolve, 160));
+      }
+    } finally {
       setGuideSaving(false);
     }
+  };
+
+  const toggleBottomSheet = (nextSheet:SheetMode) => {
+    if (sheet === nextSheet) {
+      setSheetCollapsed((value) => !value);
+      return;
+    }
+    setSheet(nextSheet);
+    setSheetCollapsed(false);
   };
 
   const searchHotel = async () => {
@@ -2265,10 +2294,10 @@ export default function Home() {
       )}
 
       <nav className="bottom-tabs">
-        <button className={sheet === "places" ? "active" : ""} onClick={() => {setSheet("places");setSheetCollapsed(false);}}><MapPin size={19}/><span>장소</span></button>
-        <button className={sheet === "search" ? "active" : ""} onClick={() => {setSheet("search");setSheetCollapsed(false);}}><Search size={19}/><span>검색</span></button>
-        <button className={sheet === "saved" ? "active" : ""} onClick={() => {setSheet("saved");setSheetCollapsed(false);}}><Heart size={19}/><span>저장</span></button>
-        <button className={sheet === "route" ? "active" : ""} onClick={() => {setSheet("route");setSheetCollapsed(false);}}><Navigation size={19}/><span>길찾기</span></button>
+        <button className={sheet === "places" ? "active" : ""} onClick={() => toggleBottomSheet("places")}><MapPin size={19}/><span>장소</span></button>
+        <button className={sheet === "search" ? "active" : ""} onClick={() => toggleBottomSheet("search")}><Search size={19}/><span>검색</span></button>
+        <button className={sheet === "saved" ? "active" : ""} onClick={() => toggleBottomSheet("saved")}><Heart size={19}/><span>저장</span></button>
+        <button className={sheet === "route" ? "active" : ""} onClick={() => toggleBottomSheet("route")}><Navigation size={19}/><span>길찾기</span></button>
         <button className={guideOpen ? "active" : ""} onClick={()=>needsAreaSetup ? setRouteError("먼저 여행 지역을 설정해 주세요.") : void openAiGuidebook()}><BookOpen size={19}/><span>AI 가이드북</span></button>
       </nav>
 
@@ -2278,15 +2307,15 @@ export default function Home() {
         </button>
         {sheet === "places" && (
           <>
+            <div className="recommendation-list-head">
+              <div><b>{category === "전체" ? "가까운 추천 장소" : `${category} 추천`}</b><small>{travelArea} 중심에서 가까운 순서</small></div>
+              <span>{listedSpots.length}곳</span>
+            </div>
             <div className="category-scroll">
               {categories.map((item) => {
                 const count=item==="전체" ? recommendationPool.length : recommendationPool.filter((point)=>guideGroup(point)===item).length;
                 return <button key={item} className={category === item ? "active" : ""} style={{"--category-color":categoryColors[item]} as React.CSSProperties} onClick={() => selectRecommendationCategory(item)}>{item}{count>0&&<small>{count}</small>}</button>;
               })}
-            </div>
-            <div className="recommendation-list-head">
-              <div><b>{category === "전체" ? "가까운 추천 장소" : `${category} 추천`}</b><small>{travelArea} 중심에서 가까운 순서</small></div>
-              <span>{listedSpots.length}곳</span>
             </div>
             {recommendationPending && <div className="recommendation-loading"><Sparkles size={20}/><b>AI 추천 리스트 검색 중입니다</b><small>AI 추천 결과가 나온 뒤 사진과 지도 표시를 적용합니다.</small></div>}
             {recommendationError && !guideRecommendations.length && <div className="recommendation-loading error"><Sparkles size={20}/><b>AI 추천을 아직 받지 못했어요</b><small>{recommendationError}</small><button onClick={()=>{setRecommendationError("");setGuideRecommendations(spots);}}>다시 표시</button></div>}
@@ -2576,7 +2605,7 @@ export default function Home() {
               <label><span>출발</span><input type="date" value={guideStart} onChange={(e)=>setGuideStart(e.target.value)}/></label>
               <label><span>도착</span><input type="date" value={guideEnd} onChange={(e)=>setGuideEnd(e.target.value)}/></label>
             </div>
-            <button onClick={downloadGuideImage} disabled={guideSaving}><Download size={17}/>{guideSaving ? "저장 중" : "이미지"}</button>
+            <button onClick={downloadGuidebookImages} disabled={guideSaving || !staticGuidebook?.pages.length}><Download size={17}/>{guideSaving ? "저장 중" : "전체 이미지"}</button>
             <button onClick={() => window.print()}><Printer size={17}/>PDF</button>
           </div>
           <div className="guide-scroll">
@@ -2595,6 +2624,10 @@ export default function Home() {
               {staticGuidebook.pages.map((page,index)=>
                 <figure key={page}>
                   <img src={page} alt={`${staticGuidebook.title} ${index+1}페이지`}/>
+                  <figcaption>
+                    <span>{index+1}페이지 원본 이미지</span>
+                    <button onClick={()=>void downloadGuidebookPage(page,index)} disabled={guideSaving}><Download size={14}/>다운로드</button>
+                  </figcaption>
                 </figure>
               )}
             </div> : <div className="ai-guide-loading"><BookOpen size={30}/><b>이미지 가이드북이 아직 준비되지 않았어요</b></div>}

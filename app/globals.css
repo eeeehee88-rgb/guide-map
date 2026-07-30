@@ -1646,6 +1646,40 @@ button{
   display:block;
 }
 
+.static-guidebook figcaption{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border-top:1px solid rgba(216,203,181,.7);
+  background:#fffaf0;
+  color:#7c6b53;
+  font-size:12px;
+  font-weight:900;
+}
+
+.static-guidebook figcaption button{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:34px;
+  padding:0 12px;
+  border:1px solid rgba(55,117,88,.24);
+  border-radius:999px;
+  background:#f1f8f4;
+  color:var(--green);
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.static-guidebook figcaption button:disabled{
+  cursor:wait;
+  opacity:.55;
+}
+
 .atlas-map-spots article,
 .atlas-course-layout>aside article{
   position:relative;
@@ -3195,10 +3229,10 @@ button{
   position:sticky!important;
   top:0!important;
   z-index:12!important;
-  width:72px!important;
-  height:18px!important;
-  min-height:18px!important;
-  margin:-22px auto 10px!important;
+  width:66px!important;
+  height:16px!important;
+  min-height:16px!important;
+  margin:-28px auto 6px!important;
   padding:0!important;
   border-radius:999px!important;
   background:transparent!important;
