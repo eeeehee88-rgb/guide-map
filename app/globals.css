@@ -3169,25 +3169,38 @@ button{
   }
 }
 
-/* Bottom sheet fixed headings and list column containment */
+/* Bottom sheet handle lock and list column containment */
 .bottom-sheet .sheet-heading{
-  position:sticky!important;
-  top:28px;
-  z-index:10!important;
-  margin:0 -16px 14px;
-  padding:8px 16px 12px;
-  border-bottom:1px solid rgba(216,203,181,.82);
-  background:#fffdf8;
-  box-shadow:0 8px 14px rgba(255,253,248,.94);
+  position:relative!important;
+  top:auto!important;
+  z-index:1!important;
+  margin:0 0 14px!important;
+  padding:0!important;
+  border-bottom:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
 }
 
 .bottom-sheet.places .category-scroll{
-  position:sticky;
-  top:28px;
-  z-index:10;
-  margin-top:-2px;
-  background:#fffdf8;
-  box-shadow:0 8px 14px rgba(255,253,248,.94);
+  position:relative!important;
+  top:auto!important;
+  z-index:auto!important;
+  margin-top:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+
+.bottom-sheet .sheet-toggle{
+  position:sticky!important;
+  top:0!important;
+  z-index:12!important;
+  width:calc(100% + 32px)!important;
+  height:28px!important;
+  min-height:28px!important;
+  margin:-28px -16px 10px!important;
+  border-radius:24px 24px 0 0!important;
+  background:#fffdf8!important;
+  box-shadow:0 8px 14px rgba(255,253,248,.94)!important;
 }
 
 .recommendation-list>button{
