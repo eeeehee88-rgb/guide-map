@@ -59,7 +59,10 @@ type AiGuidePlan = {
 type StaticGuidebook = {
   id:string; title:string; areaAliases?:string[]; duration?:string; startDate?:string; endDate?:string; pages:string[];
 };
-const LOCAL_CODEX_ORIGIN = "http://127.0.0.1:8789";
+type GuidebookJob = {
+  id:string; status:"pending"|"ready"|"failed"; area:string; startDate:string; endDate:string; duration:string;
+  title:string; pages:string[]; error?:string; requestedAt:string; updatedAt:string;
+};
 
 const spots: Point[] = [
   { id:"kirin", name:"키린테이", sub:"1927년 창업 로컬 식당", category:"맛집", lat:35.38118, lng:136.94755, color:"#ef6a4c", hours:"점심 11:00–14:30", description:"정식과 이누야마 덴가쿠 돈가스를 파는 50석 규모의 노포.", tip:"역에서 가깝고 메뉴가 익숙해 첫날 가족 식사로 좋아요.", query:"キリン亭 犬山" },
@@ -874,24 +877,6 @@ export default function Home() {
   const recommendationPending = guideLoading && !guideRecommendations.length && !recommendationError;
   const subwayLines = subwayLinesFor(travelArea);
   const hasSubwayArea = subwayLines.length > 0;
-
-  const fetchLocalCodex = async (path:string, init?:RequestInit) => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 3500);
-    try {
-      const response = await fetch(`${LOCAL_CODEX_ORIGIN}${path}`, {
-        ...init,
-        cache:"no-store",
-        signal:controller.signal,
-      });
-      if (!response.ok && response.status !== 202) return null;
-      return await response.json();
-    } catch {
-      return null;
-    } finally {
-      window.clearTimeout(timer);
-    }
-  };
 
   const updateCurrentLocation = (centerMap:boolean, showError:boolean) => {
     if (!navigator.geolocation) {
@@ -1950,43 +1935,58 @@ export default function Home() {
     return nights >= 0 ? { nights, days:nights+1 } : null;
   })();
   const tripDurationText = tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "";
-  const requestLocalCodexGuidebook = async (area:string, generate:boolean) => {
+  const guidebookFromJob = (job:GuidebookJob): StaticGuidebook | null =>
+    job.status==="ready" && job.pages?.length
+      ? {
+        id:job.id,
+        title:job.title || `${job.area} AI 가이드북`,
+        areaAliases:[job.area],
+        startDate:job.startDate,
+        endDate:job.endDate,
+        duration:job.duration,
+        pages:job.pages
+      }
+      : null;
+  const requestSiteGuidebookJob = async (area:string, generate:boolean) => {
     const payload = {
       area,
       startDate:guideStart,
       endDate:guideEnd,
-      duration:tripDurationText,
-      requestedAt:new Date().toISOString()
+      duration:tripDurationText
     };
-    const params = new URLSearchParams({
-      area:payload.area,
-      startDate:payload.startDate,
-      endDate:payload.endDate,
-      duration:payload.duration
-    });
-    const data = generate
-      ? await fetchLocalCodex("/guidebooks", {
+    try {
+      const response = await fetch("/api/guidebooks", generate ? {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(payload)
-      })
-      : await fetchLocalCodex(`/guidebooks?${params.toString()}`);
-    if (!data) return null;
-    if (data.guidebook?.pages?.length) return {
-      status:"ready",
-      guidebook:data.guidebook as StaticGuidebook,
-      message:String(data.message || "")
-    };
-    return {
-      status:String(data.status || "queued"),
-      guidebook:null,
-      message:String(data.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.")
-    };
+        headers:{"Content-Type":"application/json",...authHeaders()},
+        body:JSON.stringify(payload),
+        cache:"no-store"
+      } : {
+        method:"GET",
+        headers:authHeaders(),
+        cache:"no-store"
+      });
+      const data = await response.json().catch(()=>null);
+      if (!response.ok) return { status:"failed", guidebook:null, message:String(data?.error || "가이드북 요청을 처리하지 못했어요.") };
+      const job = data?.guidebookJob as GuidebookJob | null;
+      const guidebook = job ? guidebookFromJob(job) : null;
+      return {
+        status:job?.status || "empty",
+        guidebook,
+        message:String(data?.message || (job?.status==="pending" ? "Codex가 이미지 가이드북을 생성하는 중입니다." : "")),
+        job
+      };
+    } catch {
+      return {
+        status:"failed",
+        guidebook:null,
+        message:"가이드북 요청을 사이트에 저장하지 못했어요."
+      };
+    }
   };
-  const waitForLocalCodexGuidebook = async (area:string, attempts=72) => {
+  const waitForSiteGuidebookJob = async (area:string, attempts=72) => {
     for (let index=0; index<attempts; index+=1) {
       await new Promise((resolve)=>window.setTimeout(resolve,5000));
-      const result = await requestLocalCodexGuidebook(area,false);
+      const result = await requestSiteGuidebookJob(area,false);
       if (result?.guidebook) {
         setStaticGuidebook(result.guidebook);
         setAiGuidePlan(null);
@@ -1997,9 +1997,14 @@ export default function Home() {
         setAiGuideLoading(false);
         return;
       }
+      if (result?.status==="failed") {
+        setAiGuideLoading(false);
+        setRouteError(result.message || "가이드북 생성에 실패했어요.");
+        return;
+      }
     }
     setAiGuideLoading(false);
-    setRouteError("로컬 Codex 생성 결과를 아직 받지 못했어요. 생성이 끝나면 다시 확인해 주세요.");
+    setRouteError("Codex 생성 결과를 아직 받지 못했어요. 생성이 끝나면 다시 확인해 주세요.");
   };
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
     setTravelers((current)=>current.map((traveler)=>traveler.id===id ? {...traveler,[field]:value} : traveler));
@@ -2063,23 +2068,23 @@ export default function Home() {
     setAiGuideArea(requestedArea);
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current=requestedArea;
-    const localGuidebook = await requestLocalCodexGuidebook(requestedArea, true);
-    if (localGuidebook?.guidebook) {
-      setStaticGuidebook(localGuidebook.guidebook);
+    const guidebookJob = await requestSiteGuidebookJob(requestedArea, true);
+    if (guidebookJob?.guidebook) {
+      setStaticGuidebook(guidebookJob.guidebook);
       setAiGuidePlan(null);
       setAiGuideArea(requestedArea);
       setAiGuideLoading(false);
       setRouteError("");
       return;
     }
-    if (localGuidebook?.status==="queued") {
+    if (guidebookJob?.status==="pending") {
       setStaticGuidebook(null);
-      setRouteError(localGuidebook.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.");
-      void waitForLocalCodexGuidebook(requestedArea);
+      setRouteError(guidebookJob.message || "Codex에 이미지 가이드북 생성 요청을 보냈어요.");
+      void waitForSiteGuidebookJob(requestedArea);
       return;
     }
     setStaticGuidebook(null);
-    setRouteError("로컬 Codex 서버가 켜져 있지 않아요. `npm run codex:server`를 실행한 뒤 다시 눌러 주세요.");
+    setRouteError(guidebookJob?.message || "가이드북 생성 요청을 사이트에 저장하지 못했어요.");
     setAiGuideLoading(false);
     return;
   };
