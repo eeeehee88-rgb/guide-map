@@ -325,7 +325,7 @@ function googlePlaceDetails(place:any, fallbackName:string) {
   ];
   const paymentOptions = paymentLabels.filter(([key])=>place.paymentOptions?.[key] === true).map(([,label])=>label);
   const photoUrls = Array.isArray(place.photos)
-    ? place.photos.slice(0,10).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
+    ? place.photos.slice(0,1).map((photo:any)=>photo.getURI?.({maxWidth:1000,maxHeight:760})).filter(Boolean)
     : [];
   const detailedReviews = Array.isArray(place.reviews) ? place.reviews.slice(0,5).map((review:any)=>({
     text:reviewText(review),
@@ -851,7 +851,7 @@ export default function Home() {
     const loadDetails=async()=>{
       setPlaceDetailLoading(true);
       try {
-        const cacheKey=`google-place-detail-v2:${travelCountry}:${selected.googlePlaceId}`;
+        const cacheKey=`google-place-detail-v3:${travelCountry}:${selected.googlePlaceId}`;
         try {
           const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
           if (cached?.createdAt > Date.now()-7*24*60*60*1000 && cached.point) {
@@ -876,23 +876,10 @@ export default function Home() {
         };
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
-          "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI"
+          "rating","userRatingCount","businessStatus","photos",
+          "currentOpeningHours","regularOpeningHours"
         ]});
         mergePlace();
-        try {
-          await place.fetchFields({fields:["reviews","editorialSummary","googleMapsLinks"]});
-        } catch {}
-        try {
-          await place.fetchFields({fields:[
-            "generativeSummary","reviewSummary",
-            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
-            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
-            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
-            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
-            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
-          ]});
-        } catch {}
         if (!cancelled) {
           const enriched=mergePlace(true);
           if (enriched) {
@@ -1088,7 +1075,7 @@ export default function Home() {
           const place = new Place({ id:event.placeId,requestedLanguage:"ko",requestedRegion:travelCountry });
           await place.fetchFields({ fields:[
             "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
-            "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
+            "rating","userRatingCount","businessStatus","photos",
             "currentOpeningHours","regularOpeningHours"
           ] });
           if (!place.location) return;
@@ -1108,7 +1095,7 @@ export default function Home() {
             query:place.googleMapsURI || place.displayName || ""
             ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress
-            ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
+            ,reviewHighlights:details.reviewHighlights
             ,googlePlaceId:place.id,phone:details.phone,website:details.website,openNow:details.openNow,
             weeklyHours:details.weeklyHours,reviewSummary:details.reviewSummary,serviceOptions:details.serviceOptions,
             parkingOptions:details.parkingOptions,accessibility:details.accessibility,paymentOptions:details.paymentOptions,
@@ -1341,7 +1328,7 @@ export default function Home() {
       const center = mapRef.current?.getCenter();
       const { places } = await Place.searchByText({
         textQuery:`${query} ${travelArea.trim() || (travelCountry==="KR"?"대한민국":"일본")}`,
-        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","types","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"],
+        fields:["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","types","rating","userRatingCount","businessStatus","photos"],
         ...(areaBounds ? { locationRestriction:areaBounds } : center ? { locationBias:{ center, radius:7000 } } : {}),
         language:"ko",
         maxResultCount:12
@@ -1371,7 +1358,7 @@ export default function Home() {
         query:place.googleMapsURI || place.displayName || ""
         ,placeType:details.placeType, rating:details.rating, reviewCount:details.reviewCount, businessStatus:details.businessStatus,
         originalName:details.originalName, originalAddress:details.originalAddress
-        ,googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights
+        ,reviewHighlights:details.reviewHighlights
         ,googlePlaceId:place.id,photoUrl:place.photos?.[0]?.getURI?.({maxWidth:900,maxHeight:560})
       }});
       setPlaceResults(next);
@@ -1510,7 +1497,7 @@ export default function Home() {
       const batches = await Promise.allSettled(types.map(async (type) => {
         const resultLimit=type.label==="편의점"?20:10;
         const keepLimit=type.label==="편의점"?20:5;
-        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
+        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","businessStatus","photos"];
         const { places:localPlaces } = await Place.searchByText({
           textQuery:`${guideArea} ${type.query}`,
           fields,
@@ -1554,7 +1541,7 @@ export default function Home() {
             placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
             businessStatus:details.businessStatus,
             originalName:details.originalName, originalAddress:details.originalAddress,
-            googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights,
+            reviewHighlights:details.reviewHighlights,
             photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
             recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName),
             googlePlaceId:place.id
@@ -1571,7 +1558,7 @@ export default function Home() {
         {query:"ロフト",name:"로프트",must:false},
         {query:"ハンズ",name:"핸즈",must:false}
       ];
-      const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
+      const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","businessStatus","photos"];
       const retailBatches=activeCountry==="JP" ? await Promise.allSettled(priorityRetailers.map(async retailer=>{
         const {places}=await Place.searchByText({
           textQuery:`${guideArea} ${retailer.query}`,
@@ -1593,7 +1580,7 @@ export default function Home() {
               query:place.googleMapsURI||place.displayName||"",placeType:"쇼핑",
               rating:details.rating,reviewCount:details.reviewCount,businessStatus:details.businessStatus,
               originalName:details.originalName,originalAddress:details.originalAddress,
-              googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,
+              reviewHighlights:details.reviewHighlights,
               photoUrl:place.photos?.[0]?.getURI?.({maxWidth:400,maxHeight:240}),
               googlePlaceId:place.id,priorityShop:true,
               recommendedMenu:retailer.must?"면세 쇼핑·일본 한정 과자·화장품·생활용품":"여행용품·기념품·생활용품"
