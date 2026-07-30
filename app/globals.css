@@ -3146,3 +3146,93 @@ button{
     grid-template-columns:1fr!important;
   }
 }
+
+/* Bottom sheet fixed headings and list column containment */
+.bottom-sheet .sheet-heading{
+  position:sticky!important;
+  top:28px;
+  z-index:10!important;
+  margin:0 -16px 14px;
+  padding:8px 16px 12px;
+  border-bottom:1px solid rgba(216,203,181,.82);
+  background:#fffdf8;
+  box-shadow:0 8px 14px rgba(255,253,248,.94);
+}
+
+.bottom-sheet.places .category-scroll{
+  position:sticky;
+  top:28px;
+  z-index:10;
+  margin-top:-2px;
+  background:#fffdf8;
+  box-shadow:0 8px 14px rgba(255,253,248,.94);
+}
+
+.recommendation-list>button{
+  grid-template-columns:88px minmax(0,1fr) 34px!important;
+}
+
+.recommendation-list>button>*,
+.place-list-card>*{
+  min-width:0;
+}
+
+.recommendation-list>button>div,
+.place-list-card .result-main,
+.place-list-card .saved-main,
+.place-list-card .result-main span,
+.place-list-card .saved-main div{
+  min-width:0!important;
+  overflow:hidden;
+}
+
+.recommendation-list b,
+.place-list-card b{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.recommendation-list .recommendation-summary,
+.place-list-card .recommendation-summary{
+  max-width:100%;
+  overflow:hidden;
+}
+
+.recommendation-list .recommendation-menu,
+.place-list-card .recommendation-menu{
+  width:auto!important;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.recommendation-list footer{
+  max-width:100%;
+  overflow:hidden;
+}
+
+.recommendation-list footer span,
+.recommendation-list footer strong{
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.recommendation-list>button>svg{
+  grid-column:3;
+  justify-self:center;
+  align-self:center;
+  margin-top:0!important;
+}
+
+.place-list-card .result-save,
+.place-list-card .result-route,
+.place-list-card>button:not(.result-main):not(.saved-main){
+  flex:0 0 auto;
+  align-self:center;
+  margin-top:0!important;
+}

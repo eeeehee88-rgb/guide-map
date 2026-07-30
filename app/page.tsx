@@ -2278,7 +2278,6 @@ export default function Home() {
         </button>
         {sheet === "places" && (
           <>
-            <div className="sheet-heading"><div><small>{selected.category === "검색" ? "지도에서 선택한 장소" : "추천 장소"}</small><h2>{placeDisplayName(selected)}</h2></div></div>
             <div className="category-scroll">
               {categories.map((item) => {
                 const count=item==="전체" ? recommendationPool.length : recommendationPool.filter((point)=>guideGroup(point)===item).length;
@@ -2588,7 +2587,7 @@ export default function Home() {
               {!staticGuidebook && guidebookJob?.status==="failed" && <p>생성 실패: {guidebookJob.error || "다시 요청해 주세요."}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>이미지 가이드북을 준비하고 있어요</b></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>이미지 가이드북을 준비하고 있어요</b><span>생성은 5~10분 정도 소요됩니다.</span></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
               <header>
                 <div><small>AI 이미지 가이드북</small><h2>{staticGuidebook.title}</h2></div>
                 <span>{tripDurationText || "여행 일정"}</span>
