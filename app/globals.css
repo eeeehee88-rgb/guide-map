@@ -2450,6 +2450,31 @@ button{
   min-width:48px;
 }
 
+.place-detail-popup .place-detail-loading{
+  display:flex!important;
+  align-items:center!important;
+  gap:9px!important;
+  margin:12px 0 0!important;
+  padding:13px 14px!important;
+  border:1px solid rgba(55,117,88,.18)!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,#edf8f2,#fffaf0)!important;
+  color:var(--green)!important;
+  font-size:12px!important;
+  font-weight:900!important;
+  line-height:1.35!important;
+  box-shadow:0 8px 18px rgba(34,43,38,.08)!important;
+}
+
+.place-detail-popup .place-detail-loading svg{
+  flex:0 0 auto;
+  animation:guideSpin 1.2s linear infinite;
+}
+
+@keyframes guideSpin{
+  to{transform:rotate(360deg)}
+}
+
 .place-detail-popup .ai-tip-grid{
   grid-template-columns:repeat(2,minmax(0,1fr));
 }

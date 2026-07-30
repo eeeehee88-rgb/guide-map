@@ -710,11 +710,13 @@ export default function Home() {
     setDetailReturnSheet(returnSheet);
     setSheet("places");
     setSheetCollapsed(false);
+    setPlaceDetailLoading(Boolean(point.googlePlaceId && !point.detailLoaded));
     setPlaceDetailOpen(true);
     mapRef.current?.panTo({lat:point.lat,lng:point.lng});
   };
   const closePlaceDetail = () => {
     setPlaceDetailOpen(false);
+    setPlaceDetailLoading(false);
     setSheet(detailReturnSheet);
     setSheetCollapsed(false);
   };
@@ -849,11 +851,20 @@ export default function Home() {
     const loadDetails=async()=>{
       setPlaceDetailLoading(true);
       try {
+        const cacheKey=`google-place-detail-v2:${travelCountry}:${selected.googlePlaceId}`;
+        try {
+          const cached=JSON.parse(localStorage.getItem(cacheKey)||"null");
+          if (cached?.createdAt > Date.now()-7*24*60*60*1000 && cached.point) {
+            mergePointEverywhere({...selected,...cached.point,detailLoaded:true});
+            setPlaceDetailLoading(false);
+            return;
+          }
+        } catch {}
         const google=(window as any).google;
         const {Place}=await google.maps.importLibrary("places");
         const place=new Place({id:selected.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
         const mergePlace=(detailLoaded=false)=>{
-          if (cancelled) return;
+          if (cancelled) return null;
           const details=googlePlaceDetails(place,selected.name);
           const enriched:Point={
             ...selected,...details,sub:details.address,detailLoaded,
@@ -861,6 +872,7 @@ export default function Home() {
             photoUrl:details.photoUrls?.[0] || selected.photoUrl
           };
           mergePointEverywhere(enriched);
+          return enriched;
         };
         await place.fetchFields({fields:[
           "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
@@ -881,7 +893,12 @@ export default function Home() {
             "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
           ]});
         } catch {}
-        if (!cancelled) mergePlace(true);
+        if (!cancelled) {
+          const enriched=mergePlace(true);
+          if (enriched) {
+            try { localStorage.setItem(cacheKey,JSON.stringify({createdAt:Date.now(),point:enriched})); } catch {}
+          }
+        }
       } catch {
         if (!cancelled) setSelected((current)=>current.id===selected.id?{...current,detailLoaded:true}:current);
       } finally {
@@ -1302,49 +1319,11 @@ export default function Home() {
       return {...point,name,originalName:originalName!==name?originalName:point.originalName};
     });
   };
-  const hydrateRecommendationPreviews = async (points:Point[], limit=60) => {
-    if (!googleReady || !points.length) return;
-    const targets=points.filter((point)=>point.googlePlaceId && !point.detailLoaded).slice(0,limit);
-    if (!targets.length) return;
+  const hydrateRecommendationPreviews = async (points:Point[]) => {
+    if (!points.length) return;
     try {
-      const google=(window as any).google;
-      const {Place}=await google.maps.importLibrary("places");
-      const hydrated=(await Promise.allSettled(targets.map(async(point)=>{
-        const place=new Place({id:point.googlePlaceId,requestedLanguage:"ko",requestedRegion:travelCountry});
-        await place.fetchFields({fields:[
-          "id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName",
-          "rating","userRatingCount","businessStatus","photos","priceLevel","priceRange",
-          "currentOpeningHours","regularOpeningHours","nationalPhoneNumber","internationalPhoneNumber","websiteURI"
-        ]});
-        try {
-          await place.fetchFields({fields:["reviews","editorialSummary","googleMapsLinks"]});
-        } catch {}
-        try {
-          await place.fetchFields({fields:[
-            "generativeSummary","reviewSummary",
-            "parkingOptions","paymentOptions","hasDineIn","hasTakeout","hasDelivery","isReservable",
-            "hasOutdoorSeating","hasRestroom","isGoodForChildren","isGoodForGroups","hasMenuForChildren",
-            "servesBreakfast","servesLunch","servesDinner","servesCoffee","servesDessert","servesBeer",
-            "servesCocktails","hasWheelchairAccessibleEntrance","hasWheelchairAccessibleParking",
-            "hasWheelchairAccessibleRestroom","hasWheelchairAccessibleSeating"
-          ]});
-        } catch {}
-        const details=googlePlaceDetails(place,point.name);
-        return {
-          ...point,...details,
-          sub:details.address,
-          detailLoaded:true,
-          query:place.googleMapsURI || point.query,
-          photoUrl:details.photoUrls?.[0] || point.photoUrl
-        } as Point;
-      }))).flatMap((result)=>result.status==="fulfilled"?[result.value]:[]);
-      const localized=await localizePointNames(hydrated);
+      const localized=await localizePointNames(points);
       localized.forEach(mergePointEverywhere);
-      const insightTargets=localized.filter(canLoadPlaceInsight).slice(0,18);
-      const insightResults=await Promise.allSettled(insightTargets.map(loadPlaceInsightForPoint));
-      insightResults
-        .flatMap((result)=>result.status==="fulfilled"?[result.value]:[])
-        .forEach(mergePointEverywhere);
     } catch {}
   };
 
