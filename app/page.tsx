@@ -531,6 +531,7 @@ export default function Home() {
   const [placeResults, setPlaceResults] = useState<Point[]>([]);
   const [savedPlaces, setSavedPlaces] = useState<Point[]>([]);
   const [travelArea, setTravelArea] = useState("");
+  const [areaInput, setAreaInput] = useState("");
   const [areaSetupCompleted, setAreaSetupCompleted] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("travel-area-setup-completed") === "true"
   );
@@ -570,8 +571,8 @@ export default function Home() {
   const travelAreaRef=useRef(travelArea);
   const areaPointRef=useRef<Point|null>(areaPoint);
   const areaBoundsRef=useRef<any>(areaBounds);
-  const aiCacheKey = (country:TravelCountry=travelCountry) => `ai-trip-guide-v16:${JSON.stringify({
-    area:travelArea.trim(),country,start:guideStart,end:guideEnd,
+  const aiCacheKey = (country:TravelCountry=travelCountry, area=travelArea.trim()) => `ai-trip-guide-v16:${JSON.stringify({
+    area,country,start:guideStart,end:guideEnd,
     travelers:travelers.map(({relation,age})=>[relation,age])
   })}`;
 
@@ -735,12 +736,16 @@ export default function Home() {
           if (data.trip.guideStart) setGuideStart(data.trip.guideStart);
           if (data.trip.guideEnd) setGuideEnd(data.trip.guideEnd);
           if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
-          if (data.trip.travelArea) {
-            setTravelArea(data.trip.travelArea);
+          const localArea = localStorage.getItem("travel-search-area") || "";
+          const nextArea = localArea || data.trip.travelArea || "";
+          if (nextArea) {
+            setTravelArea(nextArea);
+            setAreaInput(nextArea);
             setAreaSetupCompleted(true);
             localStorage.setItem("travel-area-setup-completed","true");
             setSheet("places");
             setSheetCollapsed(false);
+            if (localArea && localArea !== data.trip.travelArea) void saveTripToCloud({ travelArea: localArea });
           }
           if (data.trip.travelCountry === "KR" || data.trip.travelCountry === "JP") setTravelCountry(data.trip.travelCountry);
           setTripSaved(true);
@@ -931,6 +936,7 @@ export default function Home() {
     const savedArea = localStorage.getItem("travel-search-area");
     if (savedArea) {
       setTravelArea(savedArea);
+      setAreaInput(savedArea);
       setAreaSetupCompleted(true);
       localStorage.setItem("travel-area-setup-completed","true");
       setSheet("places");
@@ -1344,27 +1350,30 @@ export default function Home() {
   };
 
   const moveToArea = async () => {
-    if (!travelArea.trim()) return;
+    const nextArea = areaInput.trim();
+    if (!nextArea) return;
     setAreaMoving(true);
     setRouteError("");
     try {
       const google = (window as any).google;
       const geocoder = new google.maps.Geocoder();
-      const hint=regionHintForArea(travelArea.trim());
+      const hint=regionHintForArea(nextArea);
       const { results:areaResults } = await geocoder.geocode({
-        address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
+        address:`${nextArea} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
       });
       if (!areaResults?.[0]) throw new Error();
       const country=geocodeCountry(areaResults[0],hint);
+      setTravelArea(nextArea);
+      setAreaInput(nextArea);
       setTravelCountry(country);
       localStorage.setItem("travel-search-country",country);
       mapRef.current?.setCenter(areaResults[0].geometry.location);
       mapRef.current?.setZoom(13);
       setAreaBounds(areaResults[0].geometry.viewport);
-      localStorage.setItem("travel-search-area", travelArea.trim());
+      localStorage.setItem("travel-search-area", nextArea);
       localStorage.setItem("travel-area-setup-completed","true");
       setAreaSetupCompleted(true);
-      void saveTripToCloud({ travelArea: travelArea.trim(), travelCountry: country });
+      void saveTripToCloud({ travelArea: nextArea, travelCountry: country });
       setPlaceResults([]);
       setGuideRecommendations([]);
       setAiGuidePlan(null);
@@ -1373,7 +1382,7 @@ export default function Home() {
       aiGuideAreaRef.current="";
       setStaticGuidebook(null);
       setCategory("전체");
-      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport, country);
+      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport, country, nextArea);
       setTripSaved(false);
       setSheet(travelers.length ? "places" : "trip");
       setSheetCollapsed(false);
@@ -1384,8 +1393,9 @@ export default function Home() {
     }
   };
 
-  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any, providedCountry?:TravelCountry) => {
-    if (!travelArea.trim()) return;
+  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any, providedCountry?:TravelCountry, providedArea?:string) => {
+    const guideArea = (providedArea || travelArea).trim();
+    if (!guideArea) return;
     let fallbackPoints:Point[] = [];
     setGuideLoading(true);
     setGuideRecommendations([]);
@@ -1397,12 +1407,12 @@ export default function Home() {
       const google = (window as any).google;
       let center = providedCenter;
       let bounds = providedBounds;
-      let activeCountry=providedCountry || travelCountry || regionHintForArea(travelArea.trim());
+      let activeCountry=providedCountry || travelCountry || regionHintForArea(guideArea);
       if (!center?.lat) {
         const geocoder = new google.maps.Geocoder();
-        const hint=regionHintForArea(travelArea.trim());
+        const hint=regionHintForArea(guideArea);
         const { results:areaResults } = await geocoder.geocode({
-          address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
+          address:`${guideArea} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
         });
         if (!areaResults?.[0]) throw new Error();
         activeCountry=geocodeCountry(areaResults[0],hint);
@@ -1418,23 +1428,23 @@ export default function Home() {
       const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
       const centerLng = typeof center.lng === "function" ? center.lng() : center.lng;
       const nextAreaPoint:Point = {
-        id:"area-center", name:`${travelArea.trim()} 중심`, sub:`${travelArea.trim()} 여행 기준 위치`,
+        id:"area-center", name:`${guideArea} 중심`, sub:`${guideArea} 여행 기준 위치`,
         category:"검색", lat:centerLat, lng:centerLng, color:"#174da4", hours:"",
-        description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"",
-        query:`${travelArea.trim()} ${activeCountry==="KR"?"대한민국":"일본"}`
+        description:`${guideArea} 지역 길찾기의 기본 출발점입니다.`, tip:"",
+        query:`${guideArea} ${activeCountry==="KR"?"대한민국":"일본"}`
       };
       setAreaPoint(nextAreaPoint);
       setSelected(nextAreaPoint);
       setOriginId("area-center");
-      localStorage.setItem("travel-search-area", travelArea.trim());
+      localStorage.setItem("travel-search-area", guideArea);
       try {
-        const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry)) || "null");
+        const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry, guideArea)) || "null");
         if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
           const cachedRecommendations = await localizePointNames(cached.recommendations);
           setAiOverview(cached.overview || "");
           setGuideRecommendations(cachedRecommendations);
-          setAiGuideArea(cached.area || travelArea.trim());
-          aiGuideAreaRef.current=cached.area || travelArea.trim();
+          setAiGuideArea(cached.area || guideArea);
+          aiGuideAreaRef.current=cached.area || guideArea;
           setDestinationId(cachedRecommendations[0].id);
           void hydrateRecommendationPreviews(cachedRecommendations);
           return cachedRecommendations as Point[];
@@ -1460,7 +1470,7 @@ export default function Home() {
         const keepLimit=type.label==="편의점"?20:5;
         const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
         const { places:localPlaces } = await Place.searchByText({
-          textQuery:`${travelArea.trim()} ${type.query}`,
+          textQuery:`${guideArea} ${type.query}`,
           fields,
           locationRestriction:bounds,
           language:"ko",
@@ -1476,7 +1486,7 @@ export default function Home() {
         let places = nearbyLocal;
         if (places.length < 5) {
           const { places:expandedPlaces } = await Place.searchByText({
-            textQuery:`${travelArea.trim()} 인근 ${type.query}`,
+            textQuery:`${guideArea} 인근 ${type.query}`,
             fields,
             locationBias:{center:{lat:centerLat,lng:centerLng},radius:30000},
             language:"ko",
@@ -1491,7 +1501,7 @@ export default function Home() {
           })].filter((place:any,index:number,items:any[])=>items.findIndex((item:any)=>item.id===place.id)===index);
         }
         return places.slice(0,keepLimit).map((place:any,index:number) => {
-          const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
+          const details = googlePlaceDetails(place, `${guideArea} ${type.label} 추천 ${index+1}`);
           return {
             id:`guide-${type.label}-${place.id}`,
             name:details.name, sub:details.address, category:"검색" as const,
@@ -1522,7 +1532,7 @@ export default function Home() {
       const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
       const retailBatches=activeCountry==="JP" ? await Promise.allSettled(priorityRetailers.map(async retailer=>{
         const {places}=await Place.searchByText({
-          textQuery:`${travelArea.trim()} ${retailer.query}`,
+          textQuery:`${guideArea} ${retailer.query}`,
           fields:retailFields,
           locationRestriction:bounds,
           language:"ko",
@@ -1582,7 +1592,7 @@ export default function Home() {
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           trip:{
-            area:travelArea.trim(), startDate:guideStart, endDate:guideEnd,
+            area:guideArea, startDate:guideStart, endDate:guideEnd,
             country:activeCountry,currency:activeCountry==="KR"?"KRW (₩)":"JPY (¥)",
             duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
             travelers:travelers.map(({relation,age})=>({relation,age}))
@@ -1650,9 +1660,9 @@ export default function Home() {
       }));
       void hydrateRecommendationPreviews(enhancedRecommendations);
       try {
-        localStorage.setItem(aiCacheKey(activeCountry),JSON.stringify({
+        localStorage.setItem(aiCacheKey(activeCountry, guideArea),JSON.stringify({
           createdAt:Date.now(),overview:aiData.result.overview || "",
-          area:travelArea.trim(),recommendations:enhancedRecommendations
+          area:guideArea,recommendations:enhancedRecommendations
         }));
       } catch {}
       setSelected((current)=>{
@@ -2218,13 +2228,13 @@ export default function Home() {
             <p>지역을 먼저 정하면 해당 지역 기준으로 지도와 추천 장소를 바로 불러옵니다.</p>
             <div className="area-setup-search">
               <input
-                value={travelArea}
-                onChange={(event)=>setTravelArea(event.target.value)}
+                value={areaInput}
+                onChange={(event)=>setAreaInput(event.target.value)}
                 onKeyDown={(event)=>event.key==="Enter"&&moveToArea()}
                 placeholder="예: 교토, 오사카, 서울"
                 autoFocus
               />
-              <button onClick={moveToArea} disabled={!googleReady || areaMoving || !travelArea.trim()}>
+              <button onClick={moveToArea} disabled={!googleReady || areaMoving || !areaInput.trim()}>
                 {areaMoving ? "설정 중" : "지역 설정"}
               </button>
             </div>
@@ -2382,7 +2392,7 @@ export default function Home() {
             <div className="sheet-heading"><div><small>실제 Google 지도 데이터</small><h2>주변 장소 검색</h2></div><Search size={19}/></div>
             <div className="area-search">
               <MapPin size={17}/>
-              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&moveToArea()} placeholder="여행 지역 입력 · 예: 교토"/>
+              <input value={areaInput} onChange={(e)=>setAreaInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&moveToArea()} placeholder="여행 지역 입력 · 예: 교토"/>
               <button onClick={moveToArea}>{areaMoving ? "이동 중" : "지역 이동"}</button>
             </div>
             <div className="hotel-search">
@@ -2553,7 +2563,7 @@ export default function Home() {
           <div className="guide-scroll">
             <div className="guide-recommend-panel">
               <div><small>Codex CLI로 만든 이미지 결과물을 바로 보여줘요</small><b>AI 여행잡지 가이드북</b></div>
-              <input value={travelArea} onChange={(e)=>setTravelArea(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&openAiGuidebook(true)} placeholder="예: 나고야, 교토"/>
+              <input value={travelArea} readOnly placeholder="예: 나고야, 교토"/>
               <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "이미지 확인 중…" : <><Sparkles size={16}/>이미지 가이드북 보기</>}</button>
               {staticGuidebook && <p>기존 텍스트 가이드북 대신 생성 이미지 {staticGuidebook.pages.length}장을 노출하고 있어요.</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
