@@ -25,8 +25,9 @@ function contentType(filePath) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (!args.user || !args.job || args.images.length < 1) {
+if (!args.user || !args.job || (args.images.length < 1 && !args.failed)) {
   console.error("Usage: npm run codex:publish-guidebook -- --user <user_id> --job <job_id> --images page1.png page2.png");
+  console.error("   or: npm run codex:publish-guidebook -- --user <user_id> --job <job_id> --failed \"reason\"");
   process.exit(1);
 }
 
@@ -51,27 +52,30 @@ if (!job || job.id !== args.job) {
 }
 
 const pages = [];
-for (let index = 0; index < args.images.length; index += 1) {
-  const source = path.resolve(args.images[index]);
-  const ext = path.extname(source).toLowerCase() || ".png";
-  const objectPath = `${args.user}/${args.job}/page-${index + 1}${ext}`;
-  const buffer = await readFile(source);
-  const { error: uploadError } = await supabase.storage
-    .from("guidebook-pages")
-    .upload(objectPath, buffer, {
-      upsert: true,
-      contentType: contentType(source),
-      cacheControl: "60",
-    });
-  if (uploadError) throw uploadError;
-  const { data } = supabase.storage.from("guidebook-pages").getPublicUrl(objectPath);
-  pages.push(data.publicUrl);
+if (!args.failed) {
+  for (let index = 0; index < args.images.length; index += 1) {
+    const source = path.resolve(args.images[index]);
+    const ext = path.extname(source).toLowerCase() || ".png";
+    const objectPath = `${args.user}/${args.job}/page-${index + 1}${ext}`;
+    const buffer = await readFile(source);
+    const { error: uploadError } = await supabase.storage
+      .from("guidebook-pages")
+      .upload(objectPath, buffer, {
+        upsert: true,
+        contentType: contentType(source),
+        cacheControl: "60",
+      });
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from("guidebook-pages").getPublicUrl(objectPath);
+    pages.push(data.publicUrl);
+  }
 }
 
 const readyJob = {
   ...job,
-  status: "ready",
+  status: args.failed ? "failed" : "ready",
   pages,
+  error: args.failed ? String(args.failed) : undefined,
   updatedAt: new Date().toISOString(),
 };
 
