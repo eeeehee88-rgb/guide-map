@@ -8,7 +8,6 @@
     "guidebook:prompts": "node scripts/create-ai-guidebook-prompts.mjs",
     "codex:server": "node scripts/local-codex-server.mjs",
     "codex:register-guidebook": "node scripts/register-local-guidebook.mjs",
-    "codex:register-recommendations": "node scripts/register-local-recommendations.mjs",
     "deploy": "vinext deploy",
     "dev:vinext": "vinext dev --port 3001",
     "build:vinext": "vinext build",

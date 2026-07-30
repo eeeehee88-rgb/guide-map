@@ -1373,8 +1373,7 @@ export default function Home() {
       aiGuideAreaRef.current="";
       setStaticGuidebook(null);
       setCategory("전체");
-      setAiOverview("Codex CLI로 준비한 개발용 추천 데이터를 표시하고 있어요.");
-      void buildAreaGuide();
+      await buildAreaGuide(areaResults[0].geometry.location, areaResults[0].geometry.viewport, country);
       setTripSaved(false);
       setSheet(travelers.length ? "places" : "trip");
       setSheetCollapsed(false);
@@ -1385,94 +1384,313 @@ export default function Home() {
     }
   };
 
-  const loadLocalCodexRecommendations = async () => {
-    const requestedArea = travelArea.trim();
-    if (!requestedArea) return null;
-    const payload = {
-      area:requestedArea,
-      country:travelCountry,
-      startDate:guideStart,
-      endDate:guideEnd,
-      duration:tripDurationText,
-      travelers:travelers.map(({relation,age})=>({relation,age})),
-      hotel
-    };
-    const data = await fetchLocalCodex("/recommendations", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-    if (!data) return null;
-    if (Array.isArray(data.recommendations) && data.recommendations.length) {
-      const points = data.recommendations
-        .filter((point:any)=>point?.name && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng)))
-        .slice(0,80)
-        .map((point:any,index:number)=>({
-          ...point,
-          id:String(point.id || `local-codex-${index}`),
-          name:String(point.name),
-          sub:String(point.sub || `${requestedArea} 추천 장소`),
-          category:(point.category || "검색") as Point["category"],
-          lat:Number(point.lat),
-          lng:Number(point.lng),
-          color:String(point.color || pointColor(point)),
-          hours:String(point.hours || ""),
-          description:String(point.description || point.listSummary || `${requestedArea} 로컬 Codex 추천 장소입니다.`),
-          listSummary:String(point.listSummary || point.description || `${requestedArea} 로컬 Codex 추천 장소입니다.`),
-          tip:String(point.tip || point.aiFamilyTip || "방문 전 최신 정보를 확인해 주세요."),
-          query:String(point.query || point.name),
-          placeType:String(point.placeType || point.category || "추천"),
-          aiReason:String(point.aiReason || point.reason || point.tip || `${requestedArea} 여행 동선에 맞춘 로컬 Codex 추천입니다.`),
-          aiFamilyTip:String(point.aiFamilyTip || point.tip || "가족 구성원 컨디션에 맞춰 방문 시간을 조정해 주세요."),
-          aiVisitTip:String(point.aiVisitTip || point.hours || "운영시간은 방문 전 확인해 주세요."),
-          aiParkingTip:String(point.aiParkingTip || "주차와 접근성은 이동 전에 확인해 주세요.")
-        })) as Point[];
-      return { overview:String(data.overview || "로컬 Codex 서버가 만든 추천 리스트예요."), points };
-    }
-    return { overview:String(data.overview || "로컬 Codex 서버에 추천 생성 요청을 남겼어요."), points:[] as Point[], queued:data.status==="queued" };
-  };
-
-  const buildAreaGuide = async () => {
-    if (!travelArea.trim()) return [] as Point[];
+  const buildAreaGuide = async (providedCenter?: any, providedBounds?: any, providedCountry?:TravelCountry) => {
+    if (!travelArea.trim()) return;
+    let fallbackPoints:Point[] = [];
     setGuideLoading(true);
+    setGuideRecommendations([]);
     setRecommendationError("");
     setPlaceResults([]);
     setCategory("전체");
     setRouteError("");
-    const localCodex = await loadLocalCodexRecommendations();
-    if (localCodex?.points.length) {
-      setAiOverview(localCodex.overview);
-      setGuideRecommendations(localCodex.points);
-      setDestinationId((current)=>current==="area-center" && localCodex.points[0] ? localCodex.points[0].id : current);
+    try {
+      const google = (window as any).google;
+      let center = providedCenter;
+      let bounds = providedBounds;
+      let activeCountry=providedCountry || travelCountry || regionHintForArea(travelArea.trim());
+      if (!center?.lat) {
+        const geocoder = new google.maps.Geocoder();
+        const hint=regionHintForArea(travelArea.trim());
+        const { results:areaResults } = await geocoder.geocode({
+          address:`${travelArea.trim()} ${hint==="KR"?"대한민국":"일본"}`, language:"ko", region:hint
+        });
+        if (!areaResults?.[0]) throw new Error();
+        activeCountry=geocodeCountry(areaResults[0],hint);
+        center = areaResults[0].geometry.location;
+        bounds = areaResults[0].geometry.viewport;
+      }
+      setTravelCountry(activeCountry);
+      localStorage.setItem("travel-search-country",activeCountry);
+      if (!bounds) throw new Error();
+      setAreaBounds(bounds);
+      mapRef.current?.setCenter(center);
+      mapRef.current?.setZoom(13);
+      const centerLat = typeof center.lat === "function" ? center.lat() : center.lat;
+      const centerLng = typeof center.lng === "function" ? center.lng() : center.lng;
+      const nextAreaPoint:Point = {
+        id:"area-center", name:`${travelArea.trim()} 중심`, sub:`${travelArea.trim()} 여행 기준 위치`,
+        category:"검색", lat:centerLat, lng:centerLng, color:"#174da4", hours:"",
+        description:`${travelArea.trim()} 지역 길찾기의 기본 출발점입니다.`, tip:"",
+        query:`${travelArea.trim()} ${activeCountry==="KR"?"대한민국":"일본"}`
+      };
+      setAreaPoint(nextAreaPoint);
+      setSelected(nextAreaPoint);
+      setOriginId("area-center");
+      localStorage.setItem("travel-search-area", travelArea.trim());
+      try {
+        const cached = JSON.parse(localStorage.getItem(aiCacheKey(activeCountry)) || "null");
+        if (cached?.createdAt > Date.now()-12*60*60*1000 && Array.isArray(cached.recommendations) && cached.recommendations.length) {
+          const cachedRecommendations = await localizePointNames(cached.recommendations);
+          setAiOverview(cached.overview || "");
+          setGuideRecommendations(cachedRecommendations);
+          setAiGuideArea(cached.area || travelArea.trim());
+          aiGuideAreaRef.current=cached.area || travelArea.trim();
+          setDestinationId(cachedRecommendations[0].id);
+          void hydrateRecommendationPreviews(cachedRecommendations);
+          return cachedRecommendations as Point[];
+        }
+      } catch {}
+      const { Place } = await google.maps.importLibrary("places");
+      const types = [
+        { label:"관광", query:"대표 관광지 명소", color:"#275fbd" },
+        { label:"맛집", query:"현지인 인기 맛집", color:"#ef6a4c" },
+        { label:"카페", query:"인기 카페 디저트", color:"#c56892" },
+        { label:"쇼핑", query:"쇼핑 백화점 대형 할인점 드럭스토어", color:"#e54473" },
+        { label:"편의점", query:"편의점", color:"#168a55" },
+        { label:"소품샵", query:"잡화점 소품샵 기념품 공예 편집숍", color:"#93701f" },
+        { label:"주류", query:activeCountry==="KR"?"주류 전문점 와인 위스키":"사케 위스키 주류 전문점", color:"#8052a5" },
+        { label:"이자카야·술집", query:"현지인 이자카야 술집", color:"#a65068" },
+        { label:"온천·휴식", query:"온천 스파 가족 휴식", color:"#6b55b5" },
+        { label:"디저트", query:"유명 디저트 베이커리", color:"#d36a9a" },
+        { label:"전통시장", query:"전통시장 상점가", color:"#d88b24" },
+        { label:"아이와 함께", query:"아이와 가족 체험 명소", color:"#2e9b78" }
+      ];
+      const batches = await Promise.allSettled(types.map(async (type) => {
+        const resultLimit=type.label==="편의점"?20:10;
+        const keepLimit=type.label==="편의점"?20:5;
+        const fields = ["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
+        const { places:localPlaces } = await Place.searchByText({
+          textQuery:`${travelArea.trim()} ${type.query}`,
+          fields,
+          locationRestriction:bounds,
+          language:"ko",
+          maxResultCount:resultLimit
+        });
+        const nearbyLocal = localPlaces.filter((place:any)=>{
+          if (!place.location || !bounds.contains(place.location)) return false;
+          return pointDistanceKm(
+            { lat:centerLat, lng:centerLng },
+            { lat:place.location.lat(), lng:place.location.lng() }
+          ) <= 20;
+        });
+        let places = nearbyLocal;
+        if (places.length < 5) {
+          const { places:expandedPlaces } = await Place.searchByText({
+            textQuery:`${travelArea.trim()} 인근 ${type.query}`,
+            fields,
+            locationBias:{center:{lat:centerLat,lng:centerLng},radius:30000},
+            language:"ko",
+            maxResultCount:resultLimit
+          });
+          places = [...nearbyLocal,...expandedPlaces.filter((place:any)=>{
+            if (!place.location) return false;
+            return pointDistanceKm(
+              { lat:centerLat, lng:centerLng },
+              { lat:place.location.lat(), lng:place.location.lng() }
+            ) <= 30;
+          })].filter((place:any,index:number,items:any[])=>items.findIndex((item:any)=>item.id===place.id)===index);
+        }
+        return places.slice(0,keepLimit).map((place:any,index:number) => {
+          const details = googlePlaceDetails(place, `${travelArea.trim()} ${type.label} 추천 ${index+1}`);
+          return {
+            id:`guide-${type.label}-${place.id}`,
+            name:details.name, sub:details.address, category:"검색" as const,
+            lat:place.location.lat(), lng:place.location.lng(), color:type.color,
+            hours:details.hours, description:details.description, listSummary:details.description,
+            tip:`${type.label} 분야의 평점과 인지도를 참고한 추천 장소예요.`,
+            query:place.googleMapsURI || place.displayName || "",
+            placeType:type.label, rating:details.rating, reviewCount:details.reviewCount,
+            businessStatus:details.businessStatus,
+            originalName:details.originalName, originalAddress:details.originalAddress,
+            googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,reviewHighlights:details.reviewHighlights,
+            photoUrl:place.photos?.[0]?.getURI?.({ maxWidth:400, maxHeight:240 }),
+            recommendedMenu:recommendedMenuFor(place.displayName || "", type.label, place.primaryTypeDisplayName),
+            googlePlaceId:place.id
+          };
+        });
+      }));
+      const categoryCandidates = batches.map((batch)=>batch.status==="fulfilled" ? batch.value : []);
+      const priorityRetailers = [
+        {query:"ドン・キホーテ",name:"돈키호테",must:true},
+        {query:"MEGAドン・キホーテ",name:"메가 돈키호테",must:true},
+        {query:"DAISO",name:"다이소",must:false},
+        {query:"マツモトキヨシ",name:"마츠모토키요시",must:false},
+        {query:"スギ薬局",name:"스기약국",must:false},
+        {query:"ロフト",name:"로프트",must:false},
+        {query:"ハンズ",name:"핸즈",must:false}
+      ];
+      const retailFields=["id","displayName","formattedAddress","location","googleMapsURI","primaryTypeDisplayName","rating","userRatingCount","regularOpeningHours","businessStatus","photos","priceLevel","priceRange"];
+      const retailBatches=activeCountry==="JP" ? await Promise.allSettled(priorityRetailers.map(async retailer=>{
+        const {places}=await Place.searchByText({
+          textQuery:`${travelArea.trim()} ${retailer.query}`,
+          fields:retailFields,
+          locationRestriction:bounds,
+          language:"ko",
+          maxResultCount:3
+        });
+        return places.filter((place:any)=>place.location && bounds.contains(place.location))
+          .sort((a:any,b:any)=>pointDistanceKm({lat:centerLat,lng:centerLng},{lat:a.location.lat(),lng:a.location.lng()})-pointDistanceKm({lat:centerLat,lng:centerLng},{lat:b.location.lat(),lng:b.location.lng()}))
+          .slice(0,retailer.must?2:1)
+          .map((place:any,index:number)=>{
+            const details=googlePlaceDetails(place,`${retailer.name} ${index+1}`);
+            return {
+              id:`guide-쇼핑-${place.id}`,name:details.name,sub:details.address,category:"검색" as const,
+              lat:place.location.lat(),lng:place.location.lng(),color:categoryColors["쇼핑"],
+              hours:details.hours,description:details.description,listSummary:details.description,
+              tip:retailer.must?"여행 지역 주변에 있으면 반드시 포함하는 쇼핑 장소예요.":"여행 중 활용도가 높은 쇼핑·드럭스토어예요.",
+              query:place.googleMapsURI||place.displayName||"",placeType:"쇼핑",
+              rating:details.rating,reviewCount:details.reviewCount,businessStatus:details.businessStatus,
+              originalName:details.originalName,originalAddress:details.originalAddress,
+              googlePriceRange:details.googlePriceRange,googlePriceLevel:details.googlePriceLevel,
+              photoUrl:place.photos?.[0]?.getURI?.({maxWidth:400,maxHeight:240}),
+              googlePlaceId:place.id,priorityShop:true,
+              recommendedMenu:retailer.must?"면세 쇼핑·일본 한정 과자·화장품·생활용품":"여행용품·기념품·생활용품"
+            } satisfies Point;
+          });
+      })) : [];
+      const priorityShopping=retailBatches.flatMap(batch=>batch.status==="fulfilled"?batch.value:[])
+        .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
+      const shoppingIndex=types.findIndex(type=>type.label==="쇼핑");
+      if (shoppingIndex>=0) {
+        categoryCandidates[shoppingIndex]=[...priorityShopping,...categoryCandidates[shoppingIndex]]
+          .filter((point,index,items)=>items.findIndex(item=>item.googlePlaceId===point.googlePlaceId)===index);
+      }
+      const convenienceIndex=types.findIndex(type=>type.label==="편의점");
+      const allConvenience=convenienceIndex>=0?categoryCandidates[convenienceIndex]:[];
+      const candidates = [[0,1,2,3,4].flatMap((rank)=>categoryCandidates.map((items)=>items[rank]).filter(Boolean)),allConvenience].flat()
+        .filter((point,index,items)=>items.findIndex((item)=>item.id===point.id)===index)
+        .slice(0,80);
+      if (!candidates.length) throw new Error();
+      fallbackPoints = candidates.map((point)=>({
+        ...point,
+        color:pointColor(point),
+        aiReason:point.tip,
+        aiFamousItems:point.recommendedMenu ? [point.recommendedMenu] : [],
+        aiRecommendedItems:point.recommendedMenu ? [{name:point.recommendedMenu,price:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry)}] : [],
+        aiPrice:point.googlePriceRange || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry),
+        aiFamilyTip:point.tip,
+        aiVisitTip:point.hours || "영업시간과 혼잡도는 방문 전에 확인해 주세요.",
+        aiParkingTip:"전용·인근 주차장은 Google 지도에서 확인해 주세요."
+      }));
+      setAiOverview("Google 장소 정보를 먼저 표시했어요. 가족 맞춤 설명을 빠르게 보강하고 있습니다.");
+      fallbackPoints = await localizePointNames(fallbackPoints.slice(0,60));
+      setGuideRecommendations(fallbackPoints);
+      setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
+      void hydrateRecommendationPreviews(fallbackPoints);
+      const aiResponse = await fetch("/api/ai-recommend",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          trip:{
+            area:travelArea.trim(), startDate:guideStart, endDate:guideEnd,
+            country:activeCountry,currency:activeCountry==="KR"?"KRW (₩)":"JPY (¥)",
+            duration:tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "일정 미등록",
+            travelers:travelers.map(({relation,age})=>({relation,age}))
+          },
+          candidates:candidates.slice(0,14).map((point)=>({
+            id:point.id,name:point.name,originalName:point.originalName,category:point.placeType,
+            rating:point.rating,reviewCount:point.reviewCount,recommendedMenu:point.recommendedMenu,
+            googlePriceRange:point.googlePriceRange,googlePriceLevel:point.googlePriceLevel,
+            reviewHighlights:point.reviewHighlights
+          }))
+        })
+      });
+      const aiData = await aiResponse.json();
+      if (!aiResponse.ok || !Array.isArray(aiData.result?.recommendations)) throw new Error(aiData.error || "AI 추천 실패");
+      const localizationMap = new Map<string, string>(
+        (Array.isArray(aiData.result.localizations)?aiData.result.localizations:[])
+          .map((item:any)=>[String(item.id),String(item.koreanName||"").trim()])
+      );
+      const aiRecommendations = aiData.result.recommendations as any[];
+      const recommendationMap = new Map<string, any>(aiRecommendations.map((item:any)=>[String(item.id),item]));
+      const candidateById = new Map(candidates.map((point)=>[point.id,point] as const));
+      const candidateByName = new Map(candidates.map((point)=>[String(point.name).trim().toLowerCase(),point] as const));
+      const aiSelected = aiRecommendations.map((ai:any,index:number)=>{
+        const requestedId=String(ai?.id||"");
+        const point = candidateById.get(requestedId)
+          || candidateByName.get(String(ai?.name||ai?.koreanName||"").trim().toLowerCase())
+          || candidates[Math.min(index,candidates.length-1)];
+        const localizedName=localizationMap.get(point.id);
+        return {
+          ...point,
+          name:localizedName && !containsJapanese(localizedName) ? localizedName : point.name,
+          originalName:point.originalName || (localizedName!==point.name ? point.name : undefined),
+          color:pointColor(point),
+          aiReason:ai.reason,
+          aiPrice:point.googlePriceRange || ai.priceGuide || point.googlePriceLevel || priceGuideFor(point.placeType || guideGroup(point),activeCountry),
+          aiFamousItems:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems : point.recommendedMenu ? [point.recommendedMenu] : [],
+          aiRecommendedItems:Array.isArray(ai.recommendedItems) ? ai.recommendedItems
+            .filter((item:any)=>item?.name)
+            .slice(0,3)
+            .map((item:any)=>({name:String(item.name),price:String(item.price||"가격 확인")})) : [],
+          aiFamilyTip:ai.familyTip,
+          aiBestTime:ai.bestTime,
+          aiEvidence:ai.evidence,
+          aiVisitTip:ai.visitTip,
+          aiParkingTip:ai.parkingTip,
+          tip:ai.familyTip || point.tip,
+          recommendedMenu:Array.isArray(ai.famousItems)&&ai.famousItems.length ? ai.famousItems.join(" · ") : point.recommendedMenu
+        };
+      }).sort((a,b)=>{
+        const pa:any=recommendationMap.get(a.id), pb:any=recommendationMap.get(b.id);
+        return Number(pa?.priority||99)-Number(pb?.priority||99);
+      });
+      const next = aiSelected.slice(0,60);
+      const aiPointMap = new Map(next.map((point)=>[point.id,point] as const));
+      let enhancedRecommendations = fallbackPoints.map((point)=>{
+        const updated=aiPointMap.get(point.id);
+        return updated ? mergePointData(point,updated) : point;
+      });
+      enhancedRecommendations = await localizePointNames(enhancedRecommendations);
+      if (!next.length) throw new Error("AI 추천 결과가 비어 있어요. 다시 시도해 주세요.");
+      setAiOverview(aiData.result.overview || "");
+      setGuideRecommendations((current)=>enhancedRecommendations.map((point)=>{
+        const existing=current.find((item)=>item.id===point.id);
+        return existing ? mergePointData(existing,point) : point;
+      }));
+      void hydrateRecommendationPreviews(enhancedRecommendations);
+      try {
+        localStorage.setItem(aiCacheKey(activeCountry),JSON.stringify({
+          createdAt:Date.now(),overview:aiData.result.overview || "",
+          area:travelArea.trim(),recommendations:enhancedRecommendations
+        }));
+      } catch {}
+      setSelected((current)=>{
+        const updated=enhancedRecommendations.find((point)=>point.id===current.id);
+        if (updated) return mergePointData(current,updated);
+        return current;
+      });
+      setDestinationId((current)=>current==="area-center" ? enhancedRecommendations[0].id : current);
+      routeLayerRef.current?.setMap(null);
+      routeLayerRef.current = null;
+      setRoute(null);
+      return enhancedRecommendations;
+    } catch (error:any) {
+      if (fallbackPoints.length) {
+        fallbackPoints = await localizePointNames(fallbackPoints);
+        setAiOverview("AI 추천 응답이 늦어 Google 장소 후보를 먼저 표시했어요. 사진과 상세 정보는 이어서 보강합니다.");
+        setGuideRecommendations(fallbackPoints);
+        setDestinationId((current)=>current==="area-center" ? fallbackPoints[0].id : current);
+        void hydrateRecommendationPreviews(fallbackPoints);
+        setRecommendationError("");
+        return fallbackPoints;
+      }
+      setRouteError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+      setRecommendationError(error?.message || "AI 추천 정보를 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+      return [] as Point[];
+    } finally {
       setGuideLoading(false);
-      return localCodex.points;
     }
-    if (localCodex?.queued) {
-      setAiOverview(localCodex.overview);
-      setRecommendationError(localCodex.overview);
-    }
-    const codexRecommendations = spots.map((point)=>({
-      ...point,
-      listSummary:point.listSummary || point.description,
-      aiReason:point.aiReason || point.tip || `${travelArea.trim()} 여행에서 바로 참고할 수 있는 개발용 추천 장소예요.`,
-      aiFamilyTip:point.aiFamilyTip || "동선과 영업시간은 방문 전에 한 번만 더 확인해 주세요.",
-      aiVisitTip:point.aiVisitTip || point.hours || "방문 전 최신 운영시간을 확인해 주세요.",
-      aiParkingTip:point.aiParkingTip || "주차와 이동 방법은 지도에서 확인해 주세요."
-    }));
-    setAiOverview("Codex CLI로 준비한 개발용 추천 데이터를 표시하고 있어요.");
-    setGuideRecommendations(codexRecommendations);
-    setDestinationId((current)=>current==="area-center" && codexRecommendations[0] ? codexRecommendations[0].id : current);
-    setGuideLoading(false);
-    return codexRecommendations;
   };
 
   useEffect(()=>{
-    if (initialGuideLoadedRef.current || guideRecommendations.length || !travelArea.trim()) return;
+    if (!googleReady || initialGuideLoadedRef.current || guideLoading || guideRecommendations.length || !travelArea.trim()) return;
     initialGuideLoadedRef.current=true;
     setSheet("places");
     setSheetCollapsed(false);
     void buildAreaGuide();
-  },[travelArea, guideRecommendations.length]);
+  },[googleReady, travelArea, guideLoading, guideRecommendations.length]);
+
 
   const downloadGuideImage = async () => {
     const node = guideRef.current;
@@ -1722,15 +1940,27 @@ export default function Home() {
     return nights >= 0 ? { nights, days:nights+1 } : null;
   })();
   const tripDurationText = tripDays ? `${tripDays.nights}박 ${tripDays.days}일` : "";
-  const normalizeGuidebookKey = (value:string) => value.toLowerCase().replace(/\s+/g,"").trim();
-  const requestLocalCodexGuidebook = async (area:string) => {
-    const params = new URLSearchParams({
+  const requestLocalCodexGuidebook = async (area:string, generate:boolean) => {
+    const payload = {
       area,
       startDate:guideStart,
       endDate:guideEnd,
-      duration:tripDurationText
+      duration:tripDurationText,
+      requestedAt:new Date().toISOString()
+    };
+    const params = new URLSearchParams({
+      area:payload.area,
+      startDate:payload.startDate,
+      endDate:payload.endDate,
+      duration:payload.duration
     });
-    const data = await fetchLocalCodex(`/guidebooks?${params.toString()}`);
+    const data = generate
+      ? await fetchLocalCodex("/guidebooks", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      })
+      : await fetchLocalCodex(`/guidebooks?${params.toString()}`);
     if (!data) return null;
     if (data.guidebook?.pages?.length) return {
       status:"ready",
@@ -1743,25 +1973,24 @@ export default function Home() {
       message:String(data.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.")
     };
   };
-  const loadStaticGuidebook = async (area:string) => {
-    const response = await fetch("/ai-guidebooks/index.json", { cache:"no-store" });
-    if (!response.ok) return null;
-    const guidebooks = await response.json().catch(() => []) as StaticGuidebook[];
-    const areaKey = normalizeGuidebookKey(area);
-    const matchedGuidebook = guidebooks.find((guidebook) => {
-      const areaMatch = (guidebook.areaAliases || []).some((alias)=>{
-        const aliasKey = normalizeGuidebookKey(alias);
-        return areaKey===aliasKey || areaKey.includes(aliasKey) || aliasKey.includes(areaKey);
-      });
-      const dateMatch = guidebook.startDate && guidebook.endDate
-        ? guidebook.startDate===guideStart && guidebook.endDate===guideEnd
-        : true;
-      const durationMatch = guidebook.duration ? !tripDurationText || guidebook.duration===tripDurationText : true;
-      return areaMatch && dateMatch && durationMatch && guidebook.pages?.length;
-    });
-    return matchedGuidebook || null;
+  const waitForLocalCodexGuidebook = async (area:string, attempts=72) => {
+    for (let index=0; index<attempts; index+=1) {
+      await new Promise((resolve)=>window.setTimeout(resolve,5000));
+      const result = await requestLocalCodexGuidebook(area,false);
+      if (result?.guidebook) {
+        setStaticGuidebook(result.guidebook);
+        setAiGuidePlan(null);
+        setAiGuideArea(area);
+        aiGuidePlanRef.current=null;
+        aiGuideAreaRef.current=area;
+        setRouteError("");
+        setAiGuideLoading(false);
+        return;
+      }
+    }
+    setAiGuideLoading(false);
+    setRouteError("로컬 Codex 생성 결과를 아직 받지 못했어요. 생성이 끝나면 다시 확인해 주세요.");
   };
-
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
     setTravelers((current)=>current.map((traveler)=>traveler.id===id ? {...traveler,[field]:value} : traveler));
     setTripSaved(false);
@@ -1824,7 +2053,7 @@ export default function Home() {
     setAiGuideArea(requestedArea);
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current=requestedArea;
-    const localGuidebook = await requestLocalCodexGuidebook(requestedArea);
+    const localGuidebook = await requestLocalCodexGuidebook(requestedArea, true);
     if (localGuidebook?.guidebook) {
       setStaticGuidebook(localGuidebook.guidebook);
       setAiGuidePlan(null);
@@ -1836,20 +2065,11 @@ export default function Home() {
     if (localGuidebook?.status==="queued") {
       setStaticGuidebook(null);
       setRouteError(localGuidebook.message || "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.");
-      setAiGuideLoading(false);
-      return;
-    }
-    const staticMatch = await loadStaticGuidebook(requestedArea);
-    if (staticMatch) {
-      setStaticGuidebook(staticMatch);
-      setAiGuidePlan(null);
-      setAiGuideArea(requestedArea);
-      setAiGuideLoading(false);
-      setRouteError("");
+      void waitForLocalCodexGuidebook(requestedArea);
       return;
     }
     setStaticGuidebook(null);
-    setRouteError("Codex CLI로 생성한 이미지 가이드북이 아직 등록되지 않았어요.");
+    setRouteError("로컬 Codex 서버가 켜져 있지 않아요. `npm run codex:server`를 실행한 뒤 다시 눌러 주세요.");
     setAiGuideLoading(false);
     return;
   };
@@ -1857,10 +2077,11 @@ export default function Home() {
   useEffect(()=>{
     const requestedArea = travelArea.trim();
     if (!guideOpen || !requestedArea || aiGuideArea===requestedArea) return;
-    const timer = window.setTimeout(() => {
-      void openAiGuidebook(true);
-    }, 350);
-    return () => window.clearTimeout(timer);
+    setStaticGuidebook(null);
+    setAiGuidePlan(null);
+    setAiGuideArea(requestedArea);
+    aiGuidePlanRef.current=null;
+    aiGuideAreaRef.current=requestedArea;
   },[guideOpen,travelArea,aiGuideArea]);
 
   const authAvailable = authConfigured;

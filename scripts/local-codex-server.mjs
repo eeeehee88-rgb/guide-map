@@ -8,7 +8,6 @@ import {
   matchesGuidebook,
   normalizeKey,
   readJson,
-  recommendationDir,
   requestDir,
   requestId,
   rootDir,
@@ -57,17 +56,6 @@ async function createGuidebookRequest(input) {
   return { id, promptPath, payloadPath };
 }
 
-async function createRecommendationRequest(input) {
-  const id = requestId(input);
-  const dir = path.join(requestDir, id);
-  await mkdir(dir, { recursive: true });
-  const promptPath = path.join(dir, "recommendations-prompt.md");
-  const payloadPath = path.join(dir, "recommendations-input.json");
-  await writeJson(payloadPath, input);
-  await writeFile(promptPath, buildRecommendationPrompt(input), "utf8");
-  return { id, promptPath, payloadPath };
-}
-
 function buildGuidebookPrompt(input) {
   return [
     "# Guide-trip local Codex guidebook request",
@@ -77,28 +65,17 @@ function buildGuidebookPrompt(input) {
     `종료일: ${input.endDate || ""}`,
     `기간: ${input.duration || ""}`,
     "",
-    "아래 조건으로 A4 가로 여행 가이드북 이미지 2~3장을 생성한다.",
-    "스타일은 일본 여행잡지 + 인포그래픽이며, 지도/번호/사진/맛집/쇼핑/팁이 포함되어야 한다.",
+    `요청시각: ${input.requestedAt || new Date().toISOString()}`,
+    "",
+    "아래 조건으로 A4 가로 여행 가이드북 이미지 2~3장을 새로 생성한다.",
+    "사용자가 제공한 오키나와 샘플처럼 일본 여행잡지 + 손그림 지도 + 현대적 인포그래픽 스타일로 만든다.",
+    "따뜻한 베이지/아이보리/파스텔톤 종이 배경, 파란색 섹션 헤더, 주황색 번호 마커, 초록색 체크리스트를 사용한다.",
+    "지도, 번호, 사진, 카드, 일정표, 팁 박스, 체크리스트, 쇼핑 리스트, 아이콘이 빽빽하게 들어간 완성형 여행 가이드북이어야 한다.",
+    "PAGE 1~2를 담은 이미지 1장과 PAGE 3/마무리 정보를 담은 이미지 1장을 기본으로 만들고, 필요하면 3장까지 만든다.",
+    "지도 번호와 설명 번호는 일치해야 하며, 지역과 여행 기간은 반드시 입력 조건을 따른다.",
     "완료 후 이미지를 저장하고 다음 명령으로 등록한다.",
     "",
     `npm run codex:register-guidebook -- --id "${requestId(input)}" --area "${input.area || ""}" --start "${input.startDate || ""}" --end "${input.endDate || ""}" --duration "${input.duration || ""}" --title "${input.area || "여행"} AI 가이드북" --images "<page1.png>" "<page2.png>"`,
-    "",
-  ].join("\n");
-}
-
-function buildRecommendationPrompt(input) {
-  return [
-    "# Guide-trip local Codex recommendation request",
-    "",
-    `지역: ${input.area || ""}`,
-    `국가: ${input.country || ""}`,
-    `기간: ${input.duration || ""}`,
-    "",
-    "가족 여행자가 바로 쓸 수 있는 추천 장소 JSON을 만든다.",
-    "각 장소는 name, sub, category, lat, lng, color, hours, description, tip, query, placeType, aiReason, aiFamilyTip, aiVisitTip, aiParkingTip 값을 포함한다.",
-    "완료 후 JSON 파일로 저장하고 다음 명령으로 등록한다.",
-    "",
-    `npm run codex:register-recommendations -- --id "${requestId(input)}" --area "${input.area || ""}" --file "<recommendations.json>"`,
     "",
   ].join("\n");
 }
@@ -112,20 +89,6 @@ async function findGuidebook(input, baseUrl) {
     ...matched,
     pages: matched.pages.map((page) => page.startsWith("http") ? page : `${baseUrl}/files/${matched.id}/${page.replace(/^\/+/, "")}`),
   };
-}
-
-async function findRecommendations(input) {
-  const index = await readJson(path.join(recommendationDir, "index.json"), []);
-  const areaKey = normalizeKey(input.area || "");
-  const matched = index.find((entry) => {
-    const aliases = entry.areaAliases || [entry.area || entry.id];
-    return aliases.some((alias) => {
-      const aliasKey = normalizeKey(alias);
-      return areaKey === aliasKey || areaKey.includes(aliasKey) || aliasKey.includes(areaKey);
-    });
-  });
-  if (!matched) return null;
-  return readJson(path.join(recommendationDir, matched.file), null);
 }
 
 function safeFilePath(id, file) {
@@ -160,27 +123,10 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/guidebooks" && req.method === "POST") {
       const input = await parseBody(req);
-      const guidebook = await findGuidebook(input, baseUrl);
-      if (guidebook) return sendJson(res, 200, { status: "ready", guidebook });
       const request = await createGuidebookRequest(input);
       return sendJson(res, 202, {
         status: "queued",
-        message: "로컬 Codex 서버에 이미지 가이드북 생성 요청을 남겼어요.",
-        request,
-      });
-    }
-
-    if (url.pathname === "/recommendations" && req.method === "POST") {
-      const input = await parseBody(req);
-      const recommendations = await findRecommendations(input);
-      if (recommendations?.recommendations?.length) {
-        return sendJson(res, 200, { status: "ready", ...recommendations });
-      }
-      const request = await createRecommendationRequest(input);
-      return sendJson(res, 202, {
-        status: "queued",
-        overview: "로컬 Codex 서버에 추천 생성 요청을 남겼어요.",
-        recommendations: [],
+        message: "로컬 Codex 서버에 새 이미지 가이드북 생성 요청을 남겼어요.",
         request,
       });
     }

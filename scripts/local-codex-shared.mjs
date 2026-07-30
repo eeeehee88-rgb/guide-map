@@ -3,7 +3,6 @@ import path from "node:path";
 
 export const rootDir = path.resolve("tmp/local-codex");
 export const guidebookDir = path.join(rootDir, "guidebooks");
-export const recommendationDir = path.join(rootDir, "recommendations");
 export const requestDir = path.join(rootDir, "requests");
 
 export function normalizeKey(value = "") {
@@ -26,7 +25,6 @@ export function requestId({ area = "", startDate = "", endDate = "", duration = 
 export async function ensureLocalCodexDirs() {
   await Promise.all([
     mkdir(guidebookDir, { recursive: true }),
-    mkdir(recommendationDir, { recursive: true }),
     mkdir(requestDir, { recursive: true }),
   ]);
 }
