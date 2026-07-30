@@ -728,6 +728,12 @@ export default function Home() {
   }, [authReady]);
 
   useEffect(() => {
+    if (!authMessage) return;
+    const timer = window.setTimeout(() => setAuthMessage(""), session ? 900 : 3200);
+    return () => window.clearTimeout(timer);
+  }, [authMessage, session]);
+
+  useEffect(() => {
     if (!session) return;
     let cancelled = false;
     window.setTimeout(() => {
@@ -1974,7 +1980,7 @@ export default function Home() {
       return {
         status:job?.status || "empty",
         guidebook,
-        message:String(data?.message || job?.error || (job?.status==="pending" ? "Codex가 이미지 가이드북을 생성하는 중입니다." : "")),
+        message:String(data?.message || job?.error || (job?.status==="pending" ? "이미지 가이드북을 생성하는 중입니다." : "")),
         job
       };
     } catch {
@@ -1985,9 +1991,9 @@ export default function Home() {
       };
     }
   };
-  const waitForSiteGuidebookJob = async (area:string, attempts=72) => {
+  const waitForSiteGuidebookJob = async (area:string, attempts=120) => {
     for (let index=0; index<attempts; index+=1) {
-      await new Promise((resolve)=>window.setTimeout(resolve,5000));
+      await new Promise((resolve)=>window.setTimeout(resolve,2500));
       const result = await requestSiteGuidebookJob(area,false);
       if (result?.guidebook) {
         setStaticGuidebook(result.guidebook);
@@ -2009,7 +2015,7 @@ export default function Home() {
       if (result?.job) setGuidebookJob(result.job);
     }
     setAiGuideLoading(false);
-    setRouteError("Codex 생성 결과를 아직 받지 못했어요. 생성이 끝나면 다시 확인해 주세요.");
+    setRouteError("이미지 가이드북이 아직 준비되지 않았어요. 잠시 후 다시 확인해 주세요.");
   };
   const updateTraveler = (id:string, field:"relation"|"age", value:string) => {
     setTravelers((current)=>current.map((traveler)=>traveler.id===id ? {...traveler,[field]:value} : traveler));
@@ -2074,7 +2080,7 @@ export default function Home() {
     setAiGuideArea(requestedArea);
     aiGuidePlanRef.current=null;
     aiGuideAreaRef.current=requestedArea;
-    const guidebookJob = await requestSiteGuidebookJob(requestedArea, true);
+    const guidebookJob = await requestSiteGuidebookJob(requestedArea, force);
     if (guidebookJob?.guidebook) {
       setStaticGuidebook(guidebookJob.guidebook);
       if (guidebookJob.job) setGuidebookJob(guidebookJob.job);
@@ -2085,14 +2091,15 @@ export default function Home() {
       return;
     }
     if (guidebookJob?.status==="pending") {
-      setStaticGuidebook(null);
+      if (force) setStaticGuidebook(null);
       if (guidebookJob.job) setGuidebookJob(guidebookJob.job);
-      setRouteError(guidebookJob.message || "Codex에 이미지 가이드북 생성 요청을 보냈어요.");
       void waitForSiteGuidebookJob(requestedArea);
       return;
     }
-    setStaticGuidebook(null);
-    setRouteError(guidebookJob?.message || "가이드북 생성 요청을 사이트에 저장하지 못했어요.");
+    if (force) {
+      setStaticGuidebook(null);
+      setRouteError(guidebookJob?.message || "가이드북 생성 요청을 저장하지 못했어요.");
+    }
     setAiGuideLoading(false);
     return;
   };
@@ -2460,7 +2467,7 @@ export default function Home() {
               ))}
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
-            <button className="guide-create-button" onClick={()=>void openAiGuidebook()}><Sparkles size={17}/> AI 가이드북 만들기</button>
+            <button className="guide-create-button" onClick={()=>void openAiGuidebook(true)}><Sparkles size={17}/> AI 가이드북 만들기</button>
           </>
         )}
 
@@ -2575,15 +2582,13 @@ export default function Home() {
           </div>
           <div className="guide-scroll">
             <div className="guide-recommend-panel">
-              <div><small>Codex가 사이트 요청을 받아 이미지로 넘겨줘요</small><b>AI 여행잡지 가이드북</b></div>
+              <div><small>여행 일정 기반 이미지 북</small><b>AI 여행 가이드북</b></div>
               <input value={travelArea} readOnly placeholder="예: 나고야, 교토"/>
-              <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "이미지 확인 중…" : <><Sparkles size={16}/>이미지 가이드북 보기</>}</button>
-              {staticGuidebook && <p>Codex가 생성한 이미지 {staticGuidebook.pages.length}장을 노출하고 있어요.</p>}
-              {!staticGuidebook && guidebookJob?.status==="pending" && <p>요청 ID {guidebookJob.id} · Codex 생성 대기 중입니다.</p>}
-              {!staticGuidebook && guidebookJob?.status==="failed" && <p>요청 ID {guidebookJob.id} · 생성 실패: {guidebookJob.error || "다시 요청해 주세요."}</p>}
+              <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "생성 요청 중…" : <><Sparkles size={16}/>{staticGuidebook ? "다시 생성" : "가이드북 생성"}</>}</button>
+              {!staticGuidebook && guidebookJob?.status==="failed" && <p>생성 실패: {guidebookJob.error || "다시 요청해 주세요."}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>Codex 이미지 생성 결과를 기다리고 있어요</b><span>사이트에 저장된 요청을 Codex가 처리해 업로드하면 자동으로 표시됩니다.</span></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
+            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>이미지 가이드북을 준비하고 있어요</b></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
               <header>
                 <div><small>AI 이미지 가이드북</small><h2>{staticGuidebook.title}</h2></div>
                 <span>{tripDurationText || "여행 일정"}</span>
@@ -2593,7 +2598,7 @@ export default function Home() {
                   <img src={page} alt={`${staticGuidebook.title} ${index+1}페이지`}/>
                 </figure>
               )}
-            </div> : <div className="ai-guide-loading"><BookOpen size={30}/><b>이미지 가이드북이 아직 준비되지 않았어요</b><span>Codex CLI로 생성한 결과물을 등록하면 이 영역에 바로 표시됩니다.</span></div>}
+            </div> : <div className="ai-guide-loading"><BookOpen size={30}/><b>이미지 가이드북이 아직 준비되지 않았어요</b></div>}
           </div>
         </section>
       )}

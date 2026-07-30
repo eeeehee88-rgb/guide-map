@@ -3024,3 +3024,125 @@ button{
   color:#8c8795;
   font-size:10px;
 }
+
+/* AI guidebook screen alignment */
+.guide-overlay{
+  background:
+    linear-gradient(180deg,rgba(255,250,241,.96),rgba(245,242,235,.98)),
+    var(--paper)!important;
+}
+
+.guide-toolbar{
+  gap:8px!important;
+  padding:10px!important;
+  border-bottom:1px solid rgba(216,203,181,.9)!important;
+  background:rgba(255,253,248,.96)!important;
+  backdrop-filter:blur(12px);
+}
+
+.guide-toolbar>button{
+  min-height:42px!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,var(--green),#2f806b)!important;
+  color:#fff!important;
+  box-shadow:0 8px 16px rgba(31,111,95,.14);
+}
+
+.guide-toolbar .guide-close{
+  background:#fffdf8!important;
+  color:var(--green-deep)!important;
+}
+
+.guide-date-fields label{
+  padding:6px 10px;
+  border:1px solid rgba(216,203,181,.9);
+  border-radius:14px;
+  background:#fffdf8;
+}
+
+.guide-date-fields span{
+  color:#8b7656!important;
+  font-size:10px!important;
+  font-weight:900;
+}
+
+.guide-date-fields input{
+  height:24px;
+  color:var(--ink);
+  font-size:12px!important;
+}
+
+.guide-scroll{
+  padding:12px!important;
+}
+
+.guide-recommend-panel{
+  width:min(860px,100%)!important;
+  grid-template-columns:minmax(0,1fr) minmax(130px,180px) minmax(128px,160px)!important;
+  gap:9px!important;
+  padding:12px!important;
+  border:1px solid rgba(216,203,181,.9)!important;
+  border-radius:18px!important;
+  background:#fffdf8!important;
+  box-shadow:0 12px 28px rgba(34,43,38,.08);
+}
+
+.guide-recommend-panel small{
+  color:#8b7656!important;
+  font-size:10px!important;
+  font-weight:900;
+}
+
+.guide-recommend-panel b{
+  color:var(--green-deep)!important;
+  font-size:16px!important;
+}
+
+.guide-recommend-panel input{
+  height:44px!important;
+  border:1px solid rgba(216,203,181,.9)!important;
+  border-radius:14px!important;
+  background:#fffaf1!important;
+  color:var(--ink);
+  font-size:12px!important;
+  font-weight:900;
+}
+
+.guide-recommend-panel button{
+  height:44px!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,var(--green),#2f806b)!important;
+  font-size:12px!important;
+}
+
+.guide-recommend-panel p{
+  grid-column:1/-1;
+  margin:0;
+  color:#a25048!important;
+  font-size:11px!important;
+}
+
+.ai-guide-loading{
+  width:min(860px,100%)!important;
+  min-height:300px!important;
+  border:1px dashed rgba(216,203,181,.95)!important;
+  border-radius:22px!important;
+  background:#fffdf8!important;
+  color:#6d756f!important;
+  box-shadow:0 12px 30px rgba(34,43,38,.08);
+}
+
+.ai-guide-loading svg{
+  color:var(--green)!important;
+}
+
+.ai-guide-loading b{
+  color:var(--green-deep)!important;
+  font-size:15px!important;
+}
+
+@media(max-width:560px){
+  .guide-recommend-panel{
+    grid-template-columns:1fr!important;
+  }
+}
