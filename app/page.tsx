@@ -785,6 +785,13 @@ export default function Home() {
           if (data.trip.guideStart) setGuideStart(data.trip.guideStart);
           if (data.trip.guideEnd) setGuideEnd(data.trip.guideEnd);
           if (Array.isArray(data.trip.travelers)) setTravelers(data.trip.travelers);
+          const savedGuidebookJob = data.trip.guidebookJob as GuidebookJob | null;
+          if (savedGuidebookJob?.id) {
+            setGuidebookJob(savedGuidebookJob);
+            const savedGuidebook = guidebookFromJob(savedGuidebookJob);
+            if (savedGuidebook) setStaticGuidebook(savedGuidebook);
+            if (savedGuidebookJob.status === "pending") setAiGuideLoading(true);
+          }
           const cloudArea = String(data.trip.travelArea || "");
           const localArea = localStorage.getItem("travel-search-area") || "";
           const nextArea = cloudArea || localArea;
@@ -2213,6 +2220,7 @@ export default function Home() {
   const authChecking = authAvailable && !authReady;
   const hasConfiguredArea = Boolean(travelArea.trim());
   const needsAreaSetup = !authRequired && !areaSetupCompleted;
+  const guidebookPending = aiGuideLoading || guidebookJob?.status === "pending";
   const activeTravelers = travelers.filter((traveler)=>traveler.relation.trim() || traveler.age.trim());
   const profileSummary = activeTravelers.length
     ? activeTravelers.map((traveler)=>`${traveler.relation.trim() || "구성원"}${traveler.age.trim() ? ` ${traveler.age.trim()}세` : ""}`).join(" · ")
@@ -2560,7 +2568,7 @@ export default function Home() {
               ))}
             </div>
             {savedPlaces.length === 0 && <p className="empty-saved">추천 장소나 검색 결과의 하트 버튼을 눌러 저장할 수 있어요.</p>}
-            <button className="guide-create-button" onClick={()=>void openAiGuidebook(true)}><Sparkles size={17}/> AI 가이드북 만들기</button>
+            <button className="guide-create-button" onClick={()=>void openAiGuidebook(true)} disabled={guidebookPending}><Sparkles size={17}/> {guidebookPending ? "AI 가이드북 제작 중" : "AI 가이드북 만들기"}</button>
           </>
         )}
 
@@ -2677,11 +2685,11 @@ export default function Home() {
             <div className="guide-recommend-panel">
               <div><small>여행 일정 기반 이미지 북</small><b>AI 여행 가이드북</b></div>
               <input value={travelArea} readOnly placeholder="예: 나고야, 교토"/>
-              <button onClick={()=>void openAiGuidebook(true)} disabled={aiGuideLoading||guideLoading}>{aiGuideLoading||guideLoading ? "생성 요청 중…" : <><Sparkles size={16}/>{staticGuidebook ? "다시 생성" : "가이드북 생성"}</>}</button>
+              <button onClick={()=>void openAiGuidebook(true)} disabled={guidebookPending||guideLoading}>{guidebookPending||guideLoading ? "제작 중…" : <><Sparkles size={16}/>{staticGuidebook ? "다시 생성" : "가이드북 생성"}</>}</button>
               {!staticGuidebook && guidebookJob?.status==="failed" && <p>생성 실패: {guidebookJob.error || "다시 요청해 주세요."}</p>}
               {routeError && <p className="guide-error">{routeError}</p>}
             </div>
-            {aiGuideLoading ? <div className="ai-guide-loading"><Sparkles size={30}/><b>이미지 가이드북을 준비하고 있어요</b><span>생성은 5~10분 정도 소요됩니다.</span></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
+            {guidebookPending && !staticGuidebook ? <div className="ai-guide-loading"><Sparkles size={30}/><b>이미지 가이드북을 준비하고 있어요</b><span>생성은 5~10분 정도 소요됩니다. 새로고침해도 요청은 유지됩니다.</span></div> : staticGuidebook ? <div className="travel-guide static-guidebook" ref={guideRef}>
               <header>
                 <div><small>AI 이미지 가이드북</small><h2>{staticGuidebook.title}</h2></div>
                 <span>{tripDurationText || "여행 일정"}</span>
