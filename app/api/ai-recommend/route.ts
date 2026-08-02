@@ -1,8 +1,8 @@
-import { readServerCache, stableHash, writeServerCache } from "../../lib/server/cache";
+﻿import { readServerCache, stableHash, writeServerCache } from "../../lib/server/cache";
 
 function fallbackRecommendation(body: any, candidates: any[], reason = "fallback") {
   return {
-    overview: "AI 추천 응답이 지연되어 Google 장소 후보를 먼저 정리했어요. 사진과 상세 정보는 이어서 보강합니다.",
+    overview: "AI 추천 응답이 지연되어 지역 후보를 먼저 정리했어요.",
     localizations: candidates.map((item: any) => ({ id: item.id, koreanName: item.name })),
     recommendations: candidates.map((item: any, index: number) => ({
       id: item.id,
@@ -12,10 +12,10 @@ function fallbackRecommendation(body: any, candidates: any[], reason = "fallback
         ? [{ name: item.recommendedMenu, price: item.googlePriceRange || item.googlePriceLevel || "가격 확인" }]
         : [],
       priceGuide: item.googlePriceRange || item.googlePriceLevel || "현장 가격 확인",
-      evidence: item.rating ? `Google 평점 ${item.rating}${item.reviewCount ? `, 리뷰 ${item.reviewCount}` : ""}` : "Google 장소 후보",
+      evidence: item.rating ? `평점 ${item.rating}${item.reviewCount ? `, 리뷰 ${item.reviewCount}` : ""}` : "지역 장소 후보",
       familyTip: "가족 구성원의 이동 거리와 운영시간을 확인하고 방문해 주세요.",
       visitTip: "방문 전 영업시간과 혼잡도를 확인해 주세요.",
-      parkingTip: "주차장은 Google 지도에서 주변 주차장을 함께 확인해 주세요.",
+      parkingTip: "주차장은 방문 전 현지 지도와 공식 정보를 확인해 주세요.",
       bestTime: "오전 또는 혼잡 시간 전",
       priority: index + 1,
     })),
@@ -108,3 +108,4 @@ export async function POST(request: Request) {
     return Response.json({ result: fallbackRecommendation(body, candidates, "parse-error"), cacheHit: false, fallback: true });
   }
 }
+

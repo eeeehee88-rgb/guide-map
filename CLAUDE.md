@@ -26,15 +26,15 @@ Copy `.env.example` to `.env.local` or configure equivalent hosted runtime varia
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `DEEPSEEK_API_KEY`
-- `GOOGLE_MAPS_API_KEY`
 
 The deployed Sites environment already has:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_URL`
-- `GOOGLE_MAPS_API_KEY`
 - `DEEPSEEK_API_KEY`
+
+Google Cloud API is intentionally not used. The map is rendered with Leaflet/OpenStreetMap tiles, and recommendations are generated from local/AI candidates instead of Google Places.
 
 ## Auth State
 
