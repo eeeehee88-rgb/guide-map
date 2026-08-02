@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vinext dev",
-    "build": "vinext build",
+    "build": "vinext build && node scripts/copy-sites-hosting-config.mjs",
     "guidebook:prompts": "node scripts/create-ai-guidebook-prompts.mjs",
     "codex:guidebook-jobs": "node scripts/list-guidebook-jobs.mjs",
     "codex:publish-guidebook": "node scripts/publish-guidebook-job.mjs",
